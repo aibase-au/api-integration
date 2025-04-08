@@ -31,9 +31,14 @@ num_errors = 1
 api_key = os.getenv('API_KEY')
 username = os.getenv('USERNAME')
 password = os.getenv('PASSWORD')
+api_endpoint = os.getenv('API_ENDPOINT', 'https://api-portal1.fastgeo.com.au/api')
 
-if not all([api_key, username, password]):
-    raise ValueError("Please set all required environment variables in .env file")
+# Check if we have valid authentication options
+use_api_key = api_key is not None and api_key.strip() != ""
+use_credentials = username is not None and password is not None and username.strip() != "" and password.strip() != ""
+
+if not (use_api_key or use_credentials):
+    raise ValueError("Please set either API_KEY or both USERNAME and PASSWORD in .env file")
 
 # %%
 df = pd.read_csv('file_summary.csv')
@@ -75,7 +80,7 @@ print(f"Log file created: {log_file}")
 
 # %%
 def login(username, password):
-    url = "https://api-portal1.fastgeo.com.au/api/TokenAuth/Authenticate"
+    url = f"{api_endpoint}/TokenAuth/Authenticate"
 
     payload = json.dumps({
         "userNameOrEmailAddress": username,
@@ -112,34 +117,41 @@ def login(username, password):
         return None
 
 # %%
-login_response = login(username, password)
-if login_response is None:
-    print("Login failed. Please check your credentials and try again.")
-    exit(1)
+# Set token to None initially
+token = None
 
-try:
-    token = login_response.json()["result"]["accessToken"]
-    print("Login successful!")
-except (KeyError, json.JSONDecodeError) as e:
-    print(f"Failed to parse login response: {str(e)}")
-    print(f"Response content: {login_response.text}")
-    exit(1)
+# Only perform login if using username/password authentication
+if use_credentials:
+    login_response = login(username, password)
+    if login_response is None:
+        print("Login failed. Please check your credentials and try again.")
+        exit(1)
 
-# %%
-def get_all_images(projectId, prospectId, accessToken):
-    url = f"https://api-portal1.fastgeo.com.au/api/services/app/Image/GetAll?ProjectIds={projectId}&ProspectIds={prospectId}&MaxResultCount=100000"
+    try:
+        token = login_response.json()["result"]["accessToken"]
+        print("Login successful!")
+    except (KeyError, json.JSONDecodeError) as e:
+        print(f"Failed to parse login response: {str(e)}")
+        print(f"Response content: {login_response.text}")
+        exit(1)
+else:
+    print("Using API key authentication")
 
-    payload = {}
+# Create a unified header generation function
+def get_request_headers(accessToken=None):
+    """Create headers with either Bearer token or API key authentication"""
+    # Extract the base URL for Origin and Referer headers
+    base_url = api_endpoint.replace('/api', '')
+    
     headers = {
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Authorization': f'Bearer {accessToken}',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
         'Content-Type': 'application/json',
-        'Origin': 'https://portal1.fastgeo.com.au',
+        'Origin': base_url,
         'Pragma': 'no-cache',
-        'Referer': 'https://portal1.fastgeo.com.au/',
+        'Referer': f"{base_url}/",
         'Sec-Fetch-Dest': 'empty',
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Site': 'same-site',
@@ -148,6 +160,21 @@ def get_all_images(projectId, prospectId, accessToken):
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"'
     }
+    
+    # Add authentication - either Bearer token or API key
+    if use_api_key:
+        headers['x-api-key'] = api_key
+    elif accessToken:
+        headers['Authorization'] = f'Bearer {accessToken}'
+    
+    return headers
+
+# %%
+def get_all_images(projectId, prospectId, accessToken=None):
+    url = f"{api_endpoint}/services/app/Image/GetAll?ProjectIds={projectId}&ProspectIds={prospectId}&MaxResultCount=100000"
+
+    payload = {}
+    headers = get_request_headers(accessToken)
 
     response = requests.request("GET", url, headers=headers, data=payload)
 
@@ -190,7 +217,7 @@ print(f"Duplicated IDs saved to: {duplicated_ids_file}")
 
 # %%
 def create_drill_hole(accessToken, name, projectId, prospectId):
-    url = "https://api-portal1.fastgeo.com.au/api/services/app/DrillHole/Create"
+    url = f"{api_endpoint}/services/app/DrillHole/Create"
 
     payload = json.dumps({
         "name": name,
@@ -200,24 +227,7 @@ def create_drill_hole(accessToken, name, projectId, prospectId):
         "prospectId": prospectId,
         "isActive": True
     })
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Authorization': f'Bearer {accessToken}',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': 'https://portal1.fastgeo.com.au',
-        'Pragma': 'no-cache',
-        'Referer': 'https://portal1.fastgeo.com.au/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
+    headers = get_request_headers(accessToken)
 
     response = requests.request("POST", url, headers=headers, data=payload)
 
@@ -226,8 +236,8 @@ def create_drill_hole(accessToken, name, projectId, prospectId):
 # create_drill_hole(token, "test", 4, 4)
 
 # %%
-def upload_image(img_path, projectId, prospectId, holeId, c):
-    url = "https://api-portal1.fastgeo.com.au/api/services/app/Image/Create"
+def upload_image(img_path, projectId, prospectId, holeId, c, accessToken=None):
+    url = f"{api_endpoint}/services/app/Image/Create"
 
     payload = {
         'Type': '1',
@@ -240,9 +250,7 @@ def upload_image(img_path, projectId, prospectId, holeId, c):
     files=[
         ('image',(os.path.basename(img_path),open(img_path,'rb'),'image/png'))
     ]
-    headers = {
-        'X-API-Key': api_key
-    }
+    headers = get_request_headers(accessToken)
 
     response = requests.request("POST", url, headers=headers, data=payload, files=files)
     return response
@@ -286,7 +294,7 @@ for index, row in df.iterrows():
             print(f"Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', ImageClass: {image_class}")
             file.write(f"[{datetime.now()}] Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', ImageClass: {image_class}\n")
         else:
-            response = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], image_class)
+            response = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], image_class, token)
             if response.status_code == 200:
                 uploaded_count += 1
                 print(f"Successfully uploaded {os.path.basename(img_path)} ({uploaded_count}/{total_files})")
