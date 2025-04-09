@@ -5,141 +5,37 @@ import json
 import os
 import csv
 from datetime import datetime
-from dotenv import load_dotenv
-from pathlib import Path
+from authentication import init_auth, authenticate, get_request_headers
 
 debug = True
 
-# Get the directory where the script is located
-script_dir = Path(__file__).parent.absolute()
-env_path = script_dir / '.env'
-
-# Load environment variables from the .env file
-print(f"Loading .env file from: {env_path}")
-load_dotenv(env_path, override=True)
-
-# Debug print environment variables
-print("\nEnvironment variables loaded:")
-print(f"PROJECT_ID: {os.getenv('PROJECT_ID')}")
-print(f"PROSPECT_ID: {os.getenv('PROSPECT_ID')}")
-print(f"API_KEY: {os.getenv('API_KEY')}")
-print(f"USERNAME: {os.getenv('USERNAME')}")
-print(f"PASSWORD: {os.getenv('PASSWORD')}")
-print(f"API_ENDPOINT: {os.getenv('API_ENDPOINT')}")
-
-# %%
-projectId = int(os.getenv('PROJECT_ID', '1'))
-prospectId = int(os.getenv('PROSPECT_ID', '11'))
-api_key = os.getenv('API_KEY')
-username = os.getenv('USERNAME')
-password = os.getenv('PASSWORD')
-# Default API endpoint if not specified in .env
-api_endpoint = os.getenv('API_ENDPOINT', 'https://api-portal1.fastgeo.com.au/api')
-
-# Check if we have valid authentication options
-use_api_key = api_key is not None and api_key.strip() != ""
-use_credentials = username is not None and password is not None and username.strip() != "" and password.strip() != ""
-
-if not (use_api_key or use_credentials):
-    raise ValueError("Please set either API_KEY or both USERNAME and PASSWORD in .env file")
+# Initialize authentication
+auth_config = init_auth()
+projectId = auth_config['projectId']
+prospectId = auth_config['prospectId']
+api_key = auth_config['api_key']
+api_endpoint = auth_config['api_endpoint']
+use_api_key = auth_config['use_api_key']
+use_credentials = auth_config['use_credentials']
 
 # Create log file with timestamp
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-# %%
-def login(username, password):
-    """
-    Authenticate with username and password to get an access token
-    """
-    url = f"{api_endpoint}/TokenAuth/Authenticate"
+# Create necessary directories for logs and results
+logs_dir = os.path.join("logs", "get_image_row", "logs")
+success_dir = os.path.join("logs", "get_image_row", "success")
 
-    payload = json.dumps({
-        "userNameOrEmailAddress": username,
-        "password": password
-    })
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Authorization': '',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': 'https://portal1.fastgeo.com.au',
-        'Pragma': 'no-cache',
-        'Referer': 'https://portal1.fastgeo.com.au/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
+# Create directories if they don't exist
+os.makedirs(logs_dir, exist_ok=True)
+os.makedirs(success_dir, exist_ok=True)
 
-    try:
-        response = requests.request("POST", url, headers=headers, data=payload)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        return response
-    except requests.exceptions.RequestException as e:
-        print(f"Login request failed: {str(e)}")
-        if 'response' in locals():
-            print(f"Response status code: {response.status_code}")
-            print(f"Response content: {response.text}")
-        return None
 
-# %%
-# Set token to None initially
-token = None
+# Get authentication token
+token = authenticate(auth_config)
+if token is None and use_credentials:
+    print("Authentication failed. Please check your credentials and try again.")
+    exit(1)
 
-# Only perform login if using username/password authentication
-if use_credentials:
-    login_response = login(username, password)
-    if login_response is None:
-        print("Login failed. Please check your credentials and try again.")
-        exit(1)
-
-    try:
-        token = login_response.json()["result"]["accessToken"]
-        print("Login successful!")
-    except (KeyError, json.JSONDecodeError) as e:
-        print(f"Failed to parse login response: {str(e)}")
-        print(f"Response content: {login_response.text}")
-        exit(1)
-else:
-    print("Using API key authentication")
-
-# %%
-def get_request_headers(accessToken=None):
-    """Create headers with either Bearer token or API key authentication"""
-    # Extract the base URL for Origin and Referer headers
-    # Remove '/api' from the end of the API endpoint to get the base URL
-    base_url = api_endpoint.replace('/api', '')
-    
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': base_url,
-        'Pragma': 'no-cache',
-        'Referer': f"{base_url}/",
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
-    
-    # Add authentication - either Bearer token or API key
-    if use_api_key:
-        headers['x-api-key'] = api_key
-    elif accessToken:
-        headers['Authorization'] = f'Bearer {accessToken}'
-    
-    return headers
 
 def get_image_row_data(projectId, prospectId, accessToken=None):
     """
@@ -149,7 +45,7 @@ def get_image_row_data(projectId, prospectId, accessToken=None):
     url = f"{api_endpoint}/services/app/Image/GetDetailByRow?projectId={projectId}&prospectId={prospectId}"
     
     payload = {}
-    headers = get_request_headers(accessToken)
+    headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
     
     try:
         response = requests.request("GET", url, headers=headers, data=payload)
@@ -174,10 +70,11 @@ try:
     data = response.json()
     
     # Save the raw response for debugging
-    with open(f"image_row_data_raw_{timestamp}.json", "w") as f:
+    log_file_path = os.path.join(logs_dir, f"image_row_data_raw_{timestamp}.json")
+    with open(log_file_path, "w") as f:
         json.dump(data, f, indent=4)
         
-    print(f"Raw data saved to image_row_data_raw_{timestamp}.json")
+    print(f"Raw data saved to {log_file_path}")
     
     # Extract relevant data for the summary
     items = data['result']['items']
@@ -226,7 +123,7 @@ try:
     df = pd.DataFrame(summary_data)
     
     # Create CSV summary
-    output_csv = f"image_row_summary_{timestamp}.csv"
+    output_csv = os.path.join(success_dir, f"image_row_summary_{timestamp}.csv")
     df.to_csv(output_csv, index=False)
     
     print(f"Image row data summary saved to {output_csv}")
@@ -270,12 +167,21 @@ try:
     df_detailed = pd.DataFrame(detailed_summary)
     
     # Create detailed CSV summary
-    detailed_output_csv = f"image_row_detailed_{timestamp}.csv"
+    detailed_output_csv = os.path.join(success_dir, f"image_row_detailed_{timestamp}.csv")
     df_detailed.to_csv(detailed_output_csv, index=False)
     
     print(f"Detailed image row data with row boundaries saved to {detailed_output_csv}")
     
 except (KeyError, json.JSONDecodeError) as e:
-    print(f"Failed to parse response: {str(e)}")
+    error_message = f"Failed to parse response: {str(e)}"
+    print(error_message)
+    
+    # Save error to log file
+    error_log_path = os.path.join(logs_dir, f"error_log_{timestamp}.txt")
+    with open(error_log_path, "w") as f:
+        f.write(f"{error_message}\n")
+        f.write(f"Response content: {response.text}")
+    
+    print(f"Error log saved to {error_log_path}")
     print(f"Response content: {response.text}")
     exit(1)

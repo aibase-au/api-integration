@@ -4,41 +4,18 @@ import requests
 import json
 import os
 from datetime import datetime
-from dotenv import load_dotenv
-from pathlib import Path
-debug = True
+from authentication import init_auth, authenticate, get_request_headers
+import pathlib
 
-# Get the directory where the script is located
-script_dir = Path(__file__).parent.absolute()
-env_path = script_dir / '.env'
-
-# Load environment variables from the .env file
-print(f"Loading .env file from: {env_path}")
-load_dotenv(env_path, override=True)
-
-# Debug print environment variables
-print("\nEnvironment variables loaded:")
-print(f"PROJECT_ID: {os.getenv('PROJECT_ID')}")
-print(f"PROSPECT_ID: {os.getenv('PROSPECT_ID')}")
-print(f"API_KEY: {os.getenv('API_KEY')}")
-print(f"USERNAME: {os.getenv('USERNAME')}")
-print(f"PASSWORD: {os.getenv('PASSWORD')}")
-
-# %%
-projectId = int(os.getenv('PROJECT_ID', '12'))
-prospectId = int(os.getenv('PROSPECT_ID', '12'))
+# Initialize authentication
+auth_config = init_auth()
+projectId = auth_config['projectId']
+prospectId = auth_config['prospectId']
+api_key = auth_config['api_key']
+api_endpoint = auth_config['api_endpoint']
+use_api_key = auth_config['use_api_key']
+use_credentials = auth_config['use_credentials']
 num_errors = 1
-api_key = os.getenv('API_KEY')
-username = os.getenv('USERNAME')
-password = os.getenv('PASSWORD')
-api_endpoint = os.getenv('API_ENDPOINT', 'https://api-portal1.fastgeo.com.au/api')
-
-# Check if we have valid authentication options
-use_api_key = api_key is not None and api_key.strip() != ""
-use_credentials = username is not None and password is not None and username.strip() != "" and password.strip() != ""
-
-if not (use_api_key or use_credentials):
-    raise ValueError("Please set either API_KEY or both USERNAME and PASSWORD in .env file")
 
 # %%
 df = pd.read_csv('file_summary.csv')
@@ -49,132 +26,66 @@ depth_to = df["End Number"].values
 conditions = df["Condition"].values
 paths = df["Full Path"].values
 
-# Create log file with timestamp
+# Create necessary directories for logs and results
+logs_dir = os.path.join("logs", "upload_kobold", "logs")
+success_dir = os.path.join("logs", "upload_kobold", "success")
+fail_dir = os.path.join("logs", "upload_kobold", "fail")
+
+# Create directories if they don't exist
+pathlib.Path(logs_dir).mkdir(parents=True, exist_ok=True)
+pathlib.Path(success_dir).mkdir(parents=True, exist_ok=True)
+pathlib.Path(fail_dir).mkdir(parents=True, exist_ok=True)
+
+# Create a timestamp for this run
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_file = f"logdata_{timestamp}.txt"
 
-with open(log_file, 'w') as f:
-    f.write(f"=== File Processing Order ===\n")
-    f.write(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    f.write(f"Total files to process: {len(df)}\n")
-    f.write("\nFiles in Processing Order:\n")
-    f.write("-" * 50 + "\n")
+# Create a single log file for the entire process
+log_file = os.path.join(logs_dir, f"upload_kobold_log_{timestamp}.txt")
+log = open(log_file, 'w')
 
-    # Process files in the order they appear in the CSV
-    for index, row in df.iterrows():
-        line_number = index + 2  # +2 because of 0-based index and header row
-        f.write(f"{index + 1}. File: {row['Original Filename']}\n")
-        f.write(f"   Line Number: {line_number}\n")
-        f.write(f"   Drill Hole: {row['Folder']}\n")
-        f.write(f"   Condition: {row['Condition']}\n")
-        f.write(f"   Full Path: {row['Full Path']}\n")
-        f.write(f"   Depth Range: {row['Start Number']} - {row['End Number']}\n")
-        f.write("\n")
+# Write initial log information
+log.write(f"=== Upload Kobold Process Log ===\n")
+log.write(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
-    f.write("\n=== Processing Summary ===\n")
-    f.write(f"Total Files: {len(df)}\n")
-    f.write(f"Total Drill Holes: {len(df['Folder'].unique())}\n")
-    f.write(f"Unique Conditions: {set(df['Condition'].values)}\n")
+# Log file summary information
+log.write(f"=== File Processing Order ===\n")
+log.write(f"Total files to process: {len(df)}\n")
+log.write("\nFiles in Processing Order:\n")
+log.write("-" * 50 + "\n")
+
+# Process files in the order they appear in the CSV
+for index, row in df.iterrows():
+    line_number = index + 2  # +2 because of 0-based index and header row
+    log.write(f"{index + 1}. File: {row['Original Filename']}\n")
+    log.write(f"   Line Number: {line_number}\n")
+    log.write(f"   Drill Hole: {row['Folder']}\n")
+    log.write(f"   Condition: {row['Condition']}\n")
+    log.write(f"   Full Path: {row['Full Path']}\n")
+    log.write(f"   Depth Range: {row['Start Number']} - {row['End Number']}\n")
+    log.write("\n")
+
+log.write("\n=== Processing Summary ===\n")
+log.write(f"Total Files: {len(df)}\n")
+log.write(f"Total Drill Holes: {len(df['Folder'].unique())}\n")
+log.write(f"Unique Conditions: {set(df['Condition'].values)}\n\n")
 
 print(f"Log file created: {log_file}")
 
 # %%
-def login(username, password):
-    url = f"{api_endpoint}/TokenAuth/Authenticate"
 
-    payload = json.dumps({
-        "userNameOrEmailAddress": username,
-        "password": password
-    })
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Authorization': '',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': 'https://portal1.fastgeo.com.au',
-        'Pragma': 'no-cache',
-        'Referer': 'https://portal1.fastgeo.com.au/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
+# Get authentication token
+token = authenticate(auth_config)
+if token is None and use_credentials:
+    print("Authentication failed. Please check your credentials and try again.")
+    exit(1)
 
-    try:
-        response = requests.request("POST", url, headers=headers, data=payload)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        return response
-    except requests.exceptions.RequestException as e:
-        print(f"Login request failed: {str(e)}")
-        if 'response' in locals():
-            print(f"Response status code: {response.status_code}")
-            print(f"Response content: {response.text}")
-        return None
-
-# %%
-# Set token to None initially
-token = None
-
-# Only perform login if using username/password authentication
-if use_credentials:
-    login_response = login(username, password)
-    if login_response is None:
-        print("Login failed. Please check your credentials and try again.")
-        exit(1)
-
-    try:
-        token = login_response.json()["result"]["accessToken"]
-        print("Login successful!")
-    except (KeyError, json.JSONDecodeError) as e:
-        print(f"Failed to parse login response: {str(e)}")
-        print(f"Response content: {login_response.text}")
-        exit(1)
-else:
-    print("Using API key authentication")
-
-# Create a unified header generation function
-def get_request_headers(accessToken=None):
-    """Create headers with either Bearer token or API key authentication"""
-    # Extract the base URL for Origin and Referer headers
-    base_url = api_endpoint.replace('/api', '')
-    
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': base_url,
-        'Pragma': 'no-cache',
-        'Referer': f"{base_url}/",
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
-    
-    # Add authentication - either Bearer token or API key
-    if use_api_key:
-        headers['x-api-key'] = api_key
-    elif accessToken:
-        headers['Authorization'] = f'Bearer {accessToken}'
-    
-    return headers
 
 # %%
 def get_all_images(projectId, prospectId, accessToken=None):
     url = f"{api_endpoint}/services/app/Image/GetAll?ProjectIds={projectId}&ProspectIds={prospectId}&MaxResultCount=100000"
 
     payload = {}
-    headers = get_request_headers(accessToken)
+    headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
 
     response = requests.request("GET", url, headers=headers, data=payload)
 
@@ -206,14 +117,15 @@ for file in duplicated_files:
     list_id = [data[idx]['id'] for idx in duplicated_idx]
     all_duplicated_id += list_id[1:]
 
-# Save all duplicated IDs to a file
-duplicated_ids_file = f"duplicated_ids_{timestamp}.txt"
-with open(duplicated_ids_file, 'w') as f:
-    f.write("Duplicated IDs:\n")
+# Log duplicated IDs
+log.write("\n=== Duplicated IDs ===\n")
+if all_duplicated_id:
     for dup_id in all_duplicated_id:
-        f.write(f"{dup_id},\n")
+        log.write(f"{dup_id},\n")
+else:
+    log.write("No duplicated IDs found.\n")
 
-print(f"Duplicated IDs saved to: {duplicated_ids_file}")
+print(f"Duplicated IDs logged to: {log_file}")
 
 # %%
 def create_drill_hole(accessToken, name, projectId, prospectId):
@@ -227,7 +139,7 @@ def create_drill_hole(accessToken, name, projectId, prospectId):
         "prospectId": prospectId,
         "isActive": True
     })
-    headers = get_request_headers(accessToken)
+    headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
 
     response = requests.request("POST", url, headers=headers, data=payload)
 
@@ -237,23 +149,85 @@ def create_drill_hole(accessToken, name, projectId, prospectId):
 
 # %%
 def upload_image(img_path, projectId, prospectId, holeId, c, accessToken=None):
+    """
+    Upload an image to the API with detailed error handling.
+    
+    Returns:
+        tuple: (response, error_details) where error_details is None on success
+               or a formatted error string on failure
+    """
     url = f"{api_endpoint}/services/app/Image/Create"
 
-    payload = {
-        'Type': '1',
-        'ImageClass': '1',
-        'StandardType': c,
-        'ProjectId': projectId,
-        'ProspectId': prospectId,
-        'HoleId': holeId
+    # Get headers without content-type to let requests set the correct multipart boundary
+    headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
+    
+    # Remove content-type if present as requests will add the correct one
+    if 'Content-Type' in headers:
+        del headers['Content-Type']
+    
+    # Create a multipart form with all fields together
+    multipart_form = {
+        'Type': (None, '1'),
+        'ImageClass': (None, str(c)),
+        'StandardType': (None, str(c)),
+        'ProjectId': (None, str(projectId)),
+        'ProspectId': (None, str(prospectId)),
+        'HoleId': (None, str(holeId)),
+        'image': (os.path.basename(img_path), open(img_path, 'rb'), 'application/octet-stream')
     }
-    files=[
-        ('image',(os.path.basename(img_path),open(img_path,'rb'),'image/png'))
-    ]
-    headers = get_request_headers(accessToken)
+    
+    try:
+        response = requests.request("POST", url, headers=headers, files=multipart_form)
+        
+        # If response is not successful, extract and format error details
+        if response.status_code != 200:
+            error_details = format_error_details(response, url, payload)
+            return response, error_details
+        
+        return response, None
+    except Exception as e:
+        # Handle request exceptions (network issues, timeouts, etc.)
+        error_msg = f"Request failed with exception: {str(e)}"
+        return None, error_msg
 
-    response = requests.request("POST", url, headers=headers, data=payload, files=files)
-    return response
+def format_error_details(response, url, payload):
+    """Format detailed error information from a failed API response."""
+    error_info = [
+        "=== API REQUEST ERROR DETAILS ===",
+        f"Status Code: {response.status_code}",
+        f"URL: {url}",
+        f"Request Payload: {json.dumps(payload, indent=2)}"
+    ]
+    
+    # Try to parse response JSON for more details
+    try:
+        error_json = response.json()
+        error_info.append("\nResponse JSON:")
+        error_info.append(json.dumps(error_json, indent=2))
+        
+        # Extract specific error messages if available
+        if "error" in error_json:
+            if "message" in error_json["error"]:
+                error_info.append(f"\nError Message: {error_json['error']['message']}")
+            if "details" in error_json["error"]:
+                error_info.append(f"Error Details: {error_json['error']['details']}")
+            if "validationErrors" in error_json["error"]:
+                error_info.append("\nValidation Errors:")
+                for error in error_json["error"]["validationErrors"]:
+                    error_info.append(f"  - {error.get('message', 'Unknown error')}")
+    except ValueError:
+        # If response is not JSON
+        error_info.append("\nResponse Text (non-JSON):")
+        error_info.append(response.text[:500] + ("..." if len(response.text) > 500 else ""))
+    except Exception as e:
+        error_info.append(f"\nError parsing response: {str(e)}")
+    
+    # Add response headers for debugging
+    error_info.append("\nResponse Headers:")
+    for key, value in response.headers.items():
+        error_info.append(f"  {key}: {value}")
+    
+    return "\n".join(error_info)
 
 # %%
 # Create all drill holes
@@ -270,9 +244,10 @@ e = 0
 total_files = len(df)
 uploaded_count = 0
 skipped_count = 0
+failed_uploads = [] # List to store information about failed uploads
 
-file = open(f"log_{timestamp}.txt", "w")
-file.write(f"=== File Upload Log ===\n")
+# Start file upload section in log
+log.write("\n=== File Upload Log ===\n")
 
 print("\nStarting file uploads...")
 for index, row in df.iterrows():
@@ -288,35 +263,96 @@ for index, row in df.iterrows():
         if name in uploaded_files:
             print(f"File already uploaded: {img_path}. Skipped.")
             skipped_count += 1
-            file.write(f"[{datetime.now()}] File already uploaded: {img_path}. Skipped.\n")
+            log.write(f"[{datetime.now()}] File already uploaded: {img_path}. Skipped.\n")
             continue
-        if debug:
-            print(f"Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', ImageClass: {image_class}")
-            file.write(f"[{datetime.now()}] Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', ImageClass: {image_class}\n")
+        # Log the upload attempt
+        print(f"Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', ImageClass: {image_class}")
+        log.write(f"[{datetime.now()}] Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', ImageClass: {image_class}\n")
+        
+        # Perform the upload
+        response, error_details = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], image_class, token)
+        
+        if response is not None and response.status_code == 200:
+            uploaded_count += 1
+            print(f"Successfully uploaded {os.path.basename(img_path)} ({uploaded_count}/{total_files})")
+            log.write(f"[{datetime.now()}] Successfully uploaded {os.path.basename(img_path)}\n")
         else:
-            response = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], image_class, token)
-            if response.status_code == 200:
-                uploaded_count += 1
-                print(f"Successfully uploaded {os.path.basename(img_path)} ({uploaded_count}/{total_files})")
-                file.write(f"[{datetime.now()}]Successfully uploaded {os.path.basename(img_path)}\n")
+            e += 1
+            # Pretty print the detailed error information
+            if error_details:
+                print(f"\nERROR uploading {os.path.basename(img_path)} for {name}:")
+                print(error_details)
+                print("-" * 80)  # Add a separator line for better readability
             else:
-                e += 1
                 print(f"Error uploading {os.path.basename(img_path)} for {name}")
-                file.write(f"[{datetime.now()}]Error uploading {os.path.basename(img_path)} for {name}\n")
-                if e == num_errors:
-                    break
+            
+            # Log the error details
+            log.write(f"[{datetime.now()}] Error uploading {os.path.basename(img_path)} for {name}\n")
+            if error_details:
+                log.write(f"Error details:\n{error_details}\n")
+            
+            # Add to failed uploads list with the same format as file_summary.csv (without error details)
+            failed_uploads.append({
+                'Folder': hole_name,
+                'Start Number': start,
+                'End Number': end,
+                'Range': end - start,
+                'Condition': c,
+                'Original Filename': os.path.basename(img_path),
+                'Full Path': img_path
+            })
+            
+            # Still log error details to the log file, but separately
+            if error_details:
+                log.write(f"Error details: {error_details}\n")
+            else:
+                status_code = response.status_code if response else "No response"
+                log.write(f"API Error: Status code {status_code}\n")
     except Exception as ex:
         e += 1
         print(f"Error when uploading images for {name}: {str(ex)}")
-        file.write(f"[{datetime.now()}]Error when uploading images for {name}: {str(ex)}\n")
-        if e == num_errors:
-            break
+        log.write(f"[{datetime.now()}] Error when uploading images for {name}: {str(ex)}\n")
+        # Add to failed uploads list with the same format as file_summary.csv (without error details)
+        failed_uploads.append({
+            'Folder': hole_name,
+            'Start Number': start,
+            'End Number': end,
+            'Range': end - start,
+            'Condition': c,
+            'Original Filename': os.path.basename(img_path),
+            'Full Path': img_path
+        })
+        
+        # Log exception details to the log file
+        log.write(f"Exception details: {str(ex)}\n")
 
 print(f"\nUpload complete. Successfully uploaded {uploaded_count}/{total_files} files.")
 print(f"Skipped {skipped_count} files already uploaded.")
-file.write(f"\nUpload complete. Successfully uploaded {uploaded_count}/{total_files} files.\n")
-file.write(f"Skipped {skipped_count} files already uploaded.\n")
-file.close()
+print(f"Failed to upload {len(failed_uploads)} files.")
+log.write(f"\nUpload complete. Successfully uploaded {uploaded_count}/{total_files} files.\n")
+log.write(f"Skipped {skipped_count} files already uploaded.\n")
+log.write(f"Failed to upload {len(failed_uploads)} files.\n")
+
+# Create failed uploads CSV file if there are any failures
+if failed_uploads:
+    fail_file = os.path.join(fail_dir, f"file_summary_fail_{timestamp}.csv")
+    print(f"Writing failed uploads to: {fail_file}")
+    fail_df = pd.DataFrame(failed_uploads)
+    # Save the fail file with the same format as file_summary.csv for reuse in future uploads
+    fail_df.to_csv(fail_file, index=False)
+    print(f"Failed uploads saved to: {fail_file} (same format as file_summary.csv for reuse)")
+
+# Log summary section
+log.write("\n=== Final Summary ===\n")
+log.write(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+log.write(f"Total files processed: {total_files}\n")
+log.write(f"Successfully uploaded: {uploaded_count}\n")
+log.write(f"Skipped (already uploaded): {skipped_count}\n")
+log.write(f"Failed uploads: {len(failed_uploads)}\n")
+
+# Close the log file
+log.close()
+print(f"All processing logged to: {log_file}")
 
 # %%
 

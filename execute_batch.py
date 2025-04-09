@@ -6,125 +6,34 @@ import json
 import os
 import csv
 from datetime import datetime
-from dotenv import load_dotenv
-from pathlib import Path
 import time
+from authentication import init_auth, authenticate, get_request_headers
 
-# Get the directory where the script is located
-script_dir = Path(__file__).parent.absolute()
-env_path = script_dir / '.env'
-
-# Load environment variables from the .env file
-print(f"Loading .env file from: {env_path}")
-load_dotenv(env_path, override=True)
-
-# Debug print environment variables
-print("\nEnvironment variables loaded:")
-print(f"PROJECT_ID: {os.getenv('PROJECT_ID')}")
-print(f"PROSPECT_ID: {os.getenv('PROSPECT_ID')}")
-print(f"WORKFLOW_ID: {os.getenv('WORKFLOW_ID')}")
-print(f"API_KEY: {os.getenv('API_KEY')}")
-print(f"USERNAME: {os.getenv('USERNAME')}")
-print(f"PASSWORD: {os.getenv('PASSWORD')}")
-print(f"API_ENDPOINT: {os.getenv('API_ENDPOINT')}")
-
-# Setup configuration from environment variables
-projectId = int(os.getenv('PROJECT_ID', '0'))
-prospectId = int(os.getenv('PROSPECT_ID', '0'))
-workflow_id = int(os.getenv('WORKFLOW_ID', '0'))
-api_key = os.getenv('API_KEY')
-username = os.getenv('USERNAME')
-password = os.getenv('PASSWORD')
-api_endpoint = os.getenv('API_ENDPOINT', 'https://api-portal1.fastgeo.com.au/api')
-
-# Check if we have valid authentication options
-use_api_key = api_key is not None and api_key.strip() != ""
-use_credentials = username is not None and password is not None and username.strip() != "" and password.strip() != ""
-
-if not (use_api_key or use_credentials):
-    raise ValueError("Please set either API_KEY or both USERNAME and PASSWORD in .env file")
+# Initialize authentication
+auth_config = init_auth()
+projectId = auth_config['projectId']
+prospectId = auth_config['prospectId']
+workflow_id = auth_config['workflow_id']
+api_key = auth_config['api_key']
+api_endpoint = auth_config['api_endpoint']
+use_api_key = auth_config['use_api_key']
+use_credentials = auth_config['use_credentials']
 
 # Create timestamp for log files
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_file = f"batch_processing_log_{timestamp}.txt"
-success_file = f"successful_images_{timestamp}.csv"
-failed_file = f"failed_images_{timestamp}.csv"
 
-def login(username, password):
-    """
-    Authenticate with username and password to get an access token
-    """
-    url = f"{api_endpoint}/TokenAuth/Authenticate"
+# Create directory structure if it doesn't exist
+log_dir = "logs/execute_batch/logs"
+result_dir = "logs/execute_batch/success"
+os.makedirs(log_dir, exist_ok=True)
+os.makedirs(result_dir, exist_ok=True)
 
-    payload = json.dumps({
-        "userNameOrEmailAddress": username,
-        "password": password
-    })
-    # Extract the base URL for Origin and Referer headers
-    base_url = api_endpoint.replace('/api', '')
-    
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Authorization': '',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': base_url,
-        'Pragma': 'no-cache',
-        'Referer': f"{base_url}/",
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
+# Set file paths
+log_file = f"{log_dir}/batch_processing_log_{timestamp}.txt"
+success_file = f"{result_dir}/successful_images_{timestamp}.csv"
+failed_file = f"{result_dir}/failed_images_{timestamp}.csv"
 
-    try:
-        response = requests.request("POST", url, headers=headers, data=payload)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        return response
-    except requests.exceptions.RequestException as e:
-        print(f"Login request failed: {str(e)}")
-        if 'response' in locals():
-            print(f"Response status code: {response.status_code}")
-            print(f"Response content: {response.text}")
-        return None
 
-def get_request_headers(accessToken=None):
-    """
-    Create headers with either Bearer token or API key authentication
-    """
-    # Extract the base URL for Origin and Referer headers
-    base_url = api_endpoint.replace('/api', '')
-    
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': base_url,
-        'Pragma': 'no-cache',
-        'Referer': f"{base_url}/",
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
-    
-    # Add authentication - either Bearer token or API key
-    if use_api_key:
-        headers['x-api-key'] = api_key
-    elif accessToken:
-        headers['Authorization'] = f'Bearer {accessToken}'
-    
-    return headers
 
 def get_all_images(projectId, prospectId, accessToken=None):
     """
@@ -133,7 +42,7 @@ def get_all_images(projectId, prospectId, accessToken=None):
     url = f"{api_endpoint}/services/app/Image/GetAll?ProjectIds={projectId}&ProspectIds={prospectId}&MaxResultCount=100000"
 
     payload = {}
-    headers = get_request_headers(accessToken)
+    headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
 
     try:
         response = requests.request("GET", url, headers=headers, data=payload)
@@ -156,12 +65,15 @@ def process_image(image_id, workflow_id, accessToken=None):
         "imageId": image_id,
         "workflowId": workflow_id
     })
-    headers = get_request_headers(accessToken)
+    headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
 
     try:
-        response = requests.request("POST", url, headers=headers, data=payload)
+        response = requests.request("POST", url, headers=headers, data=payload, timeout=30)
         response.raise_for_status()
         return response
+    except requests.exceptions.Timeout:
+        print(f"Error processing image {image_id}: Request timed out after 30 seconds")
+        return None
     except requests.exceptions.RequestException as e:
         print(f"Error processing image {image_id}: {str(e)}")
         if 'response' in locals():
@@ -178,31 +90,17 @@ with open(log_file, 'w') as f:
     f.write(f"Workflow ID: {workflow_id}\n")
     f.write(f"Authentication method: {'API Key' if use_api_key else 'Username/Password'}\n\n")
 
-# Set token to None initially
-token = None
+# Get authentication token
+token = authenticate(auth_config)
 
-# Only perform login if using username/password authentication
-if use_credentials:
-    print("Authenticating with username and password...")
-    login_response = login(username, password)
-    if login_response is None:
-        print("Login failed. Please check your credentials and try again.")
+# Log authentication status
+with open(log_file, 'a') as f:
+    if use_credentials and token:
+        f.write(f"Authentication successful with username/password\n")
+    elif token is None and use_credentials:
+        f.write(f"Authentication failed\n")
         exit(1)
-
-    try:
-        token = login_response.json()["result"]["accessToken"]
-        print("Login successful!")
-        with open(log_file, 'a') as f:
-            f.write(f"Authentication successful with username/password\n")
-    except (KeyError, json.JSONDecodeError) as e:
-        print(f"Failed to parse login response: {str(e)}")
-        print(f"Response content: {login_response.text}")
-        with open(log_file, 'a') as f:
-            f.write(f"Authentication failed: {str(e)}\n")
-        exit(1)
-else:
-    print("Using API key authentication")
-    with open(log_file, 'a') as f:
+    else:
         f.write(f"Using API key authentication\n")
 
 # Get all images
@@ -232,8 +130,11 @@ failed_images = []
 
 # Process all images
 print("\nStarting image processing...")
+print(f"Total images to process: {total_images}")
+print("Progress: 0/{} (0%)".format(total_images))
 with open(log_file, 'a') as f:
     f.write(f"\nStarting image processing at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    f.write(f"Total images to process: {total_images}\n")
 
 for i, image in enumerate(images_data):
     image_id = image['id']
@@ -242,7 +143,16 @@ for i, image in enumerate(images_data):
     depth_from = image.get('depthFrom', 'Unknown')
     depth_to = image.get('depthTo', 'Unknown')
     
-    print(f"Processing image {i+1}/{total_images}: {filename}")
+    # Calculate completion percentage
+    completion_percentage = round((i+1) / total_images * 100, 1)
+    
+    # Clear previous line and show progress
+    print(f"\rProgress: {i+1}/{total_images} ({completion_percentage}%) - Processing: {filename}", end="")
+    
+    # Every 10 images or on the last image, print a newline for better readability
+    if (i+1) % 10 == 0 or i+1 == total_images:
+        print()  # Print a newline
+        
     with open(log_file, 'a') as f:
         f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Processing image {i+1}/{total_images}: {filename}\n")
         f.write(f"  Image ID: {image_id}\n")
@@ -281,8 +191,15 @@ for i, image in enumerate(images_data):
         
         image_info['Error'] = error_msg
         failed_images.append(image_info)
-    
     # Add a small delay to avoid overwhelming the API
+    time.sleep(0.5)
+    
+    # Print progress summary every 20 images
+    if (i+1) % 20 == 0:
+        print(f"\n--- Progress Summary ---")
+        print(f"Processed: {i+1}/{total_images} images ({completion_percentage}%)")
+        print(f"Success: {len(successful_images)}, Failed: {len(failed_images)}")
+        print(f"------------------------\n")
     time.sleep(0.5)
 
 # Write summary to log
@@ -309,10 +226,10 @@ if failed_images:
     print(f"Failed images saved to: {failed_file}")
 
 # Print final summary
-print(f"\nProcessing complete!")
+print(f"\n=== Processing Complete! ===")
 print(f"Total Images: {total_images}")
-print(f"Successfully Processed: {len(successful_images)}")
-print(f"Failed to Process: {len(failed_images)}")
+print(f"Successfully Processed: {len(successful_images)} ({round(len(successful_images)/total_images*100, 1)}%)")
+print(f"Failed to Process: {len(failed_images)} ({round(len(failed_images)/total_images*100, 1)}%)")
 print(f"Log file: {log_file}")
 
 if len(failed_images) > 0:

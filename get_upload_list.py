@@ -4,146 +4,37 @@ import requests
 import json
 import os
 from datetime import datetime
-from dotenv import load_dotenv
-from pathlib import Path
+from authentication import init_auth, authenticate, get_request_headers
 debug = True
 
-# Get the directory where the script is located
-script_dir = Path(__file__).parent.absolute()
-env_path = script_dir / '.env'
-
-# Load environment variables from the .env file
-print(f"Loading .env file from: {env_path}")
-load_dotenv(env_path, override=True)
-
-# Debug print environment variables
-print("\nEnvironment variables loaded:")
-print(f"PROJECT_ID: {os.getenv('PROJECT_ID')}")
-print(f"PROSPECT_ID: {os.getenv('PROSPECT_ID')}")
-print(f"API_KEY: {os.getenv('API_KEY')}")
-print(f"USERNAME: {os.getenv('USERNAME')}")
-print(f"PASSWORD: {os.getenv('PASSWORD')}")
-print(f"API_ENDPOINT: {os.getenv('API_ENDPOINT')}")
-
-# %%
-projectId = int(os.getenv('PROJECT_ID', '12'))
-prospectId = int(os.getenv('PROSPECT_ID', '12'))
+# Initialize authentication
+auth_config = init_auth()
+projectId = auth_config['projectId']
+prospectId = auth_config['prospectId']
+api_key = auth_config['api_key']
+api_endpoint = auth_config['api_endpoint']
+use_api_key = auth_config['use_api_key']
+use_credentials = auth_config['use_credentials']
 num_errors = 1
-api_key = os.getenv('API_KEY')
-username = os.getenv('USERNAME')
-password = os.getenv('PASSWORD')
-# Default API endpoint if not specified in .env
-api_endpoint = os.getenv('API_ENDPOINT', 'https://api-portal1.fastgeo.com.au/api')
-
-# Check if we have valid authentication options
-use_api_key = api_key is not None and api_key.strip() != ""
-use_credentials = username is not None and password is not None and username.strip() != "" and password.strip() != ""
-
-if not (use_api_key or use_credentials):
-    raise ValueError("Please set either API_KEY or both USERNAME and PASSWORD in .env file")
 
 # %%
 
 # Create log file with timestamp
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-# %%
-def login(username, password):
-    url = f"{api_endpoint}/TokenAuth/Authenticate"
 
-    payload = json.dumps({
-        "userNameOrEmailAddress": username,
-        "password": password
-    })
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Authorization': '',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': 'https://portal1.fastgeo.com.au',
-        'Pragma': 'no-cache',
-        'Referer': 'https://portal1.fastgeo.com.au/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
+# Get authentication token
+token = authenticate(auth_config)
+if token is None and use_credentials:
+    print("Authentication failed. Please check your credentials and try again.")
+    exit(1)
 
-    try:
-        response = requests.request("POST", url, headers=headers, data=payload)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        return response
-    except requests.exceptions.RequestException as e:
-        print(f"Login request failed: {str(e)}")
-        if 'response' in locals():
-            print(f"Response status code: {response.status_code}")
-            print(f"Response content: {response.text}")
-        return None
-
-# %%
-# Set token to None initially
-token = None
-
-# Only perform login if using username/password authentication
-if use_credentials:
-    login_response = login(username, password)
-    if login_response is None:
-        print("Login failed. Please check your credentials and try again.")
-        exit(1)
-
-    try:
-        token = login_response.json()["result"]["accessToken"]
-        print("Login successful!")
-    except (KeyError, json.JSONDecodeError) as e:
-        print(f"Failed to parse login response: {str(e)}")
-        print(f"Response content: {login_response.text}")
-        exit(1)
-else:
-    print("Using API key authentication")
-
-# %%
-def get_request_headers(accessToken=None):
-    """Create headers with either Bearer token or API key authentication"""
-    # Extract the base URL for Origin and Referer headers
-    # Remove '/api' from the end of the API endpoint to get the base URL
-    base_url = api_endpoint.replace('/api', '')
-    
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Origin': base_url,
-        'Pragma': 'no-cache',
-        'Referer': f"{base_url}/",
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
-    
-    # Add authentication - either Bearer token or API key
-    if use_api_key:
-        headers['x-api-key'] = api_key
-    elif accessToken:
-        headers['Authorization'] = f'Bearer {accessToken}'
-    
-    return headers
 
 def get_all_images(projectId, prospectId, accessToken=None):
     url = f"{api_endpoint}/services/app/Image/GetAll?ProjectIds={projectId}&ProspectIds={prospectId}&MaxResultCount=100000"
 
     payload = {}
-    headers = get_request_headers(accessToken)
+    headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
 
     response = requests.request("GET", url, headers=headers, data=payload)
 
@@ -196,7 +87,7 @@ def get_all_holes(accessToken=None):
     url = f"{api_endpoint}/services/app/DrillHole/GetAll?MaxResultCount=100000"
 
     payload = {}
-    headers = get_request_headers(accessToken)
+    headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
     response = requests.request("GET", url, headers=headers, data=payload)
 
     return response
