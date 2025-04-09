@@ -1,10 +1,10 @@
-# Kobold Drill Core Image Management
+# Drill Core Image Management
 
 This project is a set of Python scripts for managing, uploading, and processing drill core images in the FastGeo system. The scripts help with operations like uploading images, processing batches, retrieving image data, and managing drill hole information.
 
 ## Project Overview
 
-The Kobold project includes several scripts for different operations:
+The project includes several scripts for different operations:
 
 - `upload_image.py`: Uploads drill core images to the FastGeo API
 - `execute_batch.py`: Processes uploaded images through a specific workflow
