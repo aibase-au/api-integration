@@ -27,9 +27,9 @@ conditions = df["Condition"].values
 paths = df["Full Path"].values
 
 # Create necessary directories for logs and results
-logs_dir = os.path.join("logs", "upload_kobold", "logs")
-success_dir = os.path.join("logs", "upload_kobold", "success")
-fail_dir = os.path.join("logs", "upload_kobold", "fail")
+logs_dir = os.path.join("logs", "upload_image", "logs")
+success_dir = os.path.join("logs", "upload_image", "success")
+fail_dir = os.path.join("logs", "upload_image", "fail")
 
 # Create directories if they don't exist
 pathlib.Path(logs_dir).mkdir(parents=True, exist_ok=True)
@@ -40,7 +40,7 @@ pathlib.Path(fail_dir).mkdir(parents=True, exist_ok=True)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Create a single log file for the entire process
-log_file = os.path.join(logs_dir, f"upload_kobold_log_{timestamp}.txt")
+log_file = os.path.join(logs_dir, f"upload_image_log_{timestamp}.txt")
 log = open(log_file, 'w')
 
 # Write initial log information
