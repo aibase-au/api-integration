@@ -8,6 +8,7 @@ import requests
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 from authentication import init_auth, authenticate, get_request_headers
 debug = True
 
@@ -25,6 +26,10 @@ num_errors = 1
 
 # Create log file with timestamp
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+# Create output directory
+output_dir = Path("logs/get_upload_list/success")
+output_dir.mkdir(parents=True, exist_ok=True)
 
 
 # Get authentication token
@@ -65,7 +70,7 @@ for i in tmp:
 import csv
 
 # Specify the output CSV file name
-output_csv = f"duplicated_files_{timestamp}.csv"
+output_csv = output_dir / f"duplicated_files_{timestamp}.csv"
 
 with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
     writer = csv.writer(file)
@@ -76,7 +81,7 @@ with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
 print(f"Duplicated files saved to {output_csv}")
 
 # Specify the output CSV file name
-output_csv = f"uploaded_files_{timestamp}.csv"
+output_csv = output_dir / f"uploaded_files_{timestamp}.csv"
 
 # Write the uploaded_files list to the CSV file
 with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
@@ -104,7 +109,7 @@ drill_holes = [[x['name'], x['id'], x['drillHoleStatus'], x['elevation'], x['nor
 import csv
 
 # Specify the output CSV file name
-output_csv = f"drill_holes_{timestamp}.csv"
+output_csv = output_dir / f"drill_holes_{timestamp}.csv"
 
 # Write the uploaded_files list to the CSV file
 with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
