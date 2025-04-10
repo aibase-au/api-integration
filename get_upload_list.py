@@ -100,7 +100,7 @@ drill_holes = [[x['name'], x['id'], x['drillHoleStatus'], x['elevation'], x['nor
 import csv
 
 # Specify the output CSV file name
-output_csv = f"drill_holses_{timestamp}.csv"
+output_csv = f"drill_holes_{timestamp}.csv"
 
 # Write the uploaded_files list to the CSV file
 with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
