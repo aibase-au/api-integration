@@ -53,7 +53,15 @@ res = get_all_images(projectId, prospectId, token)  # token will be None if usin
 
 data = res.json()['result']['items']
 image_data = [[x['files'][0]['fileName'], x['depthFrom'], x['depthTo'], x['standardType'], x['imageClass'], x['type'],x['drillHole']['id']] for x in data]
-uploaded_files = ([x[0].replace(f"_{x[0].split('_')[-1]}", "")+f"_{x[1]}" for x in image_data])
+uploaded_files = []
+for x in image_data:
+    base_name = x[0].replace(f"_{x[0].split('_')[-1]}", "")+f"_{x[1]}"
+    if x[4] == 1:  # If imageClass = 1
+        uploaded_files.append(f"{base_name}_Dry")
+    elif x[4] == 2:  # If imageClass = 2
+        uploaded_files.append(f"{base_name}_Wet")
+    else:
+        uploaded_files.append(base_name)
 
 tmp = {}
 for i in uploaded_files:
