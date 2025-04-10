@@ -42,6 +42,6 @@ ENV/
 # Logs
 *.log
 
-*.csv
 *.txt
 *.json
+logs/

@@ -58,6 +58,9 @@ def get_all_images(projectId, prospectId, accessToken=None):
 def process_image(image_id, workflow_id, accessToken=None):
     """
     Process an image with the specified workflow
+    Returns:
+        - On success: Response object
+        - On failure: Tuple(None, error_details)
     """
     url = f"{api_endpoint}/services/app/Image/ProcessImage"
 
@@ -67,19 +70,54 @@ def process_image(image_id, workflow_id, accessToken=None):
     })
     headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
 
+    error_details = {
+        'error_type': None,
+        'error_message': None,
+        'status_code': None,
+        'response_content': None,
+        'request_url': url,
+        'request_payload': payload
+    }
+
     try:
         response = requests.request("POST", url, headers=headers, data=payload, timeout=30)
         response.raise_for_status()
-        return response
+        return response, None
+
     except requests.exceptions.Timeout:
-        print(f"Error processing image {image_id}: Request timed out after 30 seconds")
-        return None
+        error_details.update({
+            'error_type': 'Timeout',
+            'error_message': f"Request timed out after 30 seconds for image {image_id}"
+        })
+        return None, error_details
+
+    except requests.exceptions.ConnectionError as e:
+        error_details.update({
+            'error_type': 'ConnectionError',
+            'error_message': f"Connection failed for image {image_id}: {str(e)}"
+        })
+        return None, error_details
+
+    except requests.exceptions.HTTPError as e:
+        error_details.update({
+            'error_type': 'HTTPError',
+            'error_message': f"HTTP error occurred for image {image_id}: {str(e)}",
+            'status_code': e.response.status_code,
+            'response_content': e.response.text
+        })
+        return None, error_details
+
     except requests.exceptions.RequestException as e:
-        print(f"Error processing image {image_id}: {str(e)}")
-        if 'response' in locals():
-            print(f"Response status code: {response.status_code}")
-            print(f"Response content: {response.text}")
-        return None
+        error_details.update({
+            'error_type': 'RequestException',
+            'error_message': f"Request failed for image {image_id}: {str(e)}"
+        })
+        if hasattr(e, 'response') and e.response is not None:
+            error_details.update({
+                'status_code': e.response.status_code,
+                'response_content': e.response.text
+            })
+        return None, error_details
 
 # Initialize logger
 with open(log_file, 'w') as f:
@@ -160,7 +198,7 @@ for i, image in enumerate(images_data):
         f.write(f"  Depth Range: {depth_from} - {depth_to}\n")
     
     # Process the image with the workflow
-    process_response = process_image(image_id, workflow_id, token)
+    process_response, error_details = process_image(image_id, workflow_id, token)
     
     image_info = {
         'Image ID': image_id,
@@ -177,19 +215,25 @@ for i, image in enumerate(images_data):
             f.write(f"  ✓ Successfully processed\n")
         successful_images.append(image_info)
     else:
-        error_msg = "Unknown error"
-        if process_response:
-            try:
-                error_json = process_response.json()
-                error_msg = error_json.get('error', {}).get('message', 'Unknown error')
-            except:
-                error_msg = f"Status Code: {process_response.status_code}"
-        
-        print(f"  ✗ Failed to process image: {filename}. Error: {error_msg}")
+        # Log detailed error information
         with open(log_file, 'a') as f:
-            f.write(f"  ✗ Failed to process. Error: {error_msg}\n")
+            f.write(f"  ✗ Failed to process image. Details:\n")
+            f.write(f"    Error Type: {error_details['error_type']}\n")
+            f.write(f"    Error Message: {error_details['error_message']}\n")
+            if error_details['status_code']:
+                f.write(f"    Status Code: {error_details['status_code']}\n")
+            if error_details['response_content']:
+                f.write(f"    Response Content: {error_details['response_content']}\n")
+            f.write(f"    Request URL: {error_details['request_url']}\n")
+            f.write(f"    Request Payload: {error_details['request_payload']}\n")
+        
+        # Create user-friendly error message
+        error_msg = f"{error_details['error_type']}: {error_details['error_message']}"
+        print(f"  ✗ Failed to process image: {filename}")
+        print(f"    Error: {error_msg}")
         
         image_info['Error'] = error_msg
+        image_info['Error Type'] = error_details['error_type']
         failed_images.append(image_info)
     # Add a small delay to avoid overwhelming the API
     time.sleep(0.5)
