@@ -19,6 +19,20 @@ The project includes several scripts for different operations:
     - API key (RECOMMENDED) 
     - Username/password
 
+## API Documentation
+
+The FastGeo API documentation is available through Postman:
+[FastGeo API Documentation](https://documenter.getpostman.com/view/14342098/2sAYJ1m31h)
+
+This documentation covers:
+- Authentication methods
+- Available endpoints
+- Request/response formats
+- Example API calls
+- Data structures and schemas
+
+Please refer to this documentation for detailed information about the API endpoints used by these scripts.
+
 ## Setup Instructions
 
 ### 1. Clone the Repository
