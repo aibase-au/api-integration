@@ -18,7 +18,7 @@ use_credentials = auth_config['use_credentials']
 num_errors = 1
 
 # %%
-df = pd.read_csv('FilesToUpload.csv')
+df = pd.read_csv('filetoupload.csv')
 
 hole_names = df['Folder'].values
 depth_from = df["BoxFrom"].values
