@@ -18,11 +18,11 @@ use_credentials = auth_config['use_credentials']
 num_errors = 1
 
 # %%
-df = pd.read_csv('file_summary.csv')
+df = pd.read_csv('FilesToUpload.csv')
 
 hole_names = df['Folder'].values
-depth_from = df["Start Number"].values
-depth_to = df["End Number"].values
+depth_from = df["BoxFrom"].values
+depth_to = df["BoxTo"].values
 conditions = df["Condition"].values
 paths = df["Full Path"].values
 
@@ -61,7 +61,7 @@ for index, row in df.iterrows():
     log.write(f"   Drill Hole: {row['Folder']}\n")
     log.write(f"   Condition: {row['Condition']}\n")
     log.write(f"   Full Path: {row['Full Path']}\n")
-    log.write(f"   Depth Range: {row['Start Number']} - {row['End Number']}\n")
+    log.write(f"   Depth Range: {row['BoxFrom']} - {row['BoxTo']}\n")
     log.write("\n")
 
 log.write("\n=== Processing Summary ===\n")
@@ -148,7 +148,7 @@ def create_drill_hole(accessToken, name, projectId, prospectId):
 # create_drill_hole(token, "test", 4, 4)
 
 # %%
-def upload_image(img_path, projectId, prospectId, holeId, standard_type, accessToken=None):
+def upload_image(img_path, projectId, prospectId, holeId, standard_type, start, end, accessToken=None):
     """
     Upload an image to the API with detailed error handling.
     
@@ -173,7 +173,9 @@ def upload_image(img_path, projectId, prospectId, holeId, standard_type, accessT
         'ProjectId': (None, str(projectId)),
         'ProspectId': (None, str(prospectId)),
         'HoleId': (None, str(holeId)),
-        'image': (os.path.basename(img_path), open(img_path, 'rb'), 'application/octet-stream')
+        'image': (os.path.basename(img_path), open(img_path, 'rb'), 'application/octet-stream'),
+        'DepthFrom': (None, str(start)),
+        'DepthTo': (None, str(end)),
     }
     
     try:
@@ -181,7 +183,7 @@ def upload_image(img_path, projectId, prospectId, holeId, standard_type, accessT
         
         # If response is not successful, extract and format error details
         if response.status_code != 200:
-            error_details = format_error_details(response, url, payload)
+            error_details = format_error_details(response, url)
             return response, error_details
         
         return response, None
@@ -190,13 +192,12 @@ def upload_image(img_path, projectId, prospectId, holeId, standard_type, accessT
         error_msg = f"Request failed with exception: {str(e)}"
         return None, error_msg
 
-def format_error_details(response, url, payload):
+def format_error_details(response, url):
     """Format detailed error information from a failed API response."""
     error_info = [
         "=== API REQUEST ERROR DETAILS ===",
         f"Status Code: {response.status_code}",
         f"URL: {url}",
-        f"Request Payload: {json.dumps(payload, indent=2)}"
     ]
     
     # Try to parse response JSON for more details
@@ -254,8 +255,8 @@ for index, row in df.iterrows():
     try:
         hole_name = row['Folder']
         img_path = row['Full Path']
-        start = row['Start Number']
-        end = row['End Number']
+        start = row['BoxFrom']
+        end = row['BoxTo']
         c = row['Condition']
         c = str(c).strip()
         standard_type = 1 if c.lower() == "dry" else 2
@@ -270,7 +271,7 @@ for index, row in df.iterrows():
         log.write(f"[{datetime.now()}] Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', StandardType: {standard_type}\n")
         
         # Perform the upload
-        response, error_details = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], standard_type, token)
+        response, error_details = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], standard_type, start, end, token )
         
         if response is not None and response.status_code == 200:
             uploaded_count += 1
@@ -294,8 +295,8 @@ for index, row in df.iterrows():
             # Add to failed uploads list with the same format as file_summary.csv (without error details)
             failed_uploads.append({
                 'Folder': hole_name,
-                'Start Number': start,
-                'End Number': end,
+                'BoxFrom': start,
+                'BoxTo': end,
                 'Range': end - start,
                 'Condition': c,
                 'Original Filename': os.path.basename(img_path),
@@ -315,8 +316,8 @@ for index, row in df.iterrows():
         # Add to failed uploads list with the same format as file_summary.csv (without error details)
         failed_uploads.append({
             'Folder': hole_name,
-            'Start Number': start,
-            'End Number': end,
+            'BoxFrom': start,
+            'BoxTo': end,
             'Range': end - start,
             'Condition': c,
             'Original Filename': os.path.basename(img_path),
@@ -353,14 +354,6 @@ log.write(f"Failed uploads: {len(failed_uploads)}\n")
 # Close the log file
 log.close()
 print(f"All processing logged to: {log_file}")
-
-# %%
-
-
-# %%
-
-
-# %%
 
 
 
