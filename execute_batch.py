@@ -11,8 +11,8 @@ from authentication import init_auth, authenticate, get_request_headers
 
 # Initialize authentication
 auth_config = init_auth()
-projectId = auth_config['projectId']
-prospectId = auth_config['prospectId']
+# projectId = auth_config['projectId']
+# prospectId = auth_config['prospectId']
 workflow_id = auth_config['workflow_id']
 api_key = auth_config['api_key']
 api_endpoint = auth_config['api_endpoint']
@@ -35,12 +35,24 @@ failed_file = f"{result_dir}/failed_images_{timestamp}.csv"
 
 
 
-def get_all_images(projectId, prospectId, accessToken=None):
+def read_hole_ids():
     """
-    Get all images for a specific project and prospect
+    Read HoleIDs from sendtobatch.csv file
     """
-    url = f"{api_endpoint}/services/app/Image/GetAll?ProjectIds={projectId}&ProspectIds={prospectId}&MaxResultCount=100000"
+    hole_ids = []
+    with open('sendtobatch.csv', 'r') as file:
+        csv_reader = csv.DictReader(file)
+        for row in csv_reader:
+            hole_ids.append(row['HoleID'])
+    return hole_ids
 
+def get_all_images(hole_ids, accessToken=None):
+    """
+    Get all images for specific project, prospect and hole IDs
+    """
+    hole_ids_param = ', '.join([f'"{hole_id}"' for hole_id in hole_ids])
+    url = f"{api_endpoint}/services/app/Image/GetAll?drillHoleNames=[{hole_ids_param}]&MaxResultCount=100000"
+    print(f"Fetching images from URL: {url}")
     payload = {}
     headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
 
@@ -123,10 +135,12 @@ def process_image(image_id, workflow_id, accessToken=None):
 with open(log_file, 'w') as f:
     f.write(f"=== Batch Image Processing Log ===\n")
     f.write(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    f.write(f"Project ID: {projectId}\n")
-    f.write(f"Prospect ID: {prospectId}\n")
     f.write(f"Workflow ID: {workflow_id}\n")
-    f.write(f"Authentication method: {'API Key' if use_api_key else 'Username/Password'}\n\n")
+    f.write(f"Authentication method: {'API Key' if use_api_key else 'Username/Password'}\n")
+    
+    # Log hole IDs being processed
+    hole_ids = read_hole_ids()
+    f.write(f"Processing drill hole: {', '.join(hole_ids)}\n\n")
 
 # Get authentication token
 token = authenticate(auth_config)
@@ -142,8 +156,13 @@ with open(log_file, 'a') as f:
         f.write(f"Using API key authentication\n")
 
 # Get all images
-print(f"Fetching images for Project ID: {projectId}, Prospect ID: {prospectId}...")
-images_response = get_all_images(projectId, prospectId, token)
+# Get hole IDs from CSV
+hole_ids = read_hole_ids()
+print(f"Found {len(hole_ids)} hole IDs to process: {', '.join(hole_ids)}")
+
+# Get all images for specified hole IDs
+print(f"Fetching images for drill holes: {hole_ids}...")
+images_response = get_all_images(hole_ids, token)
 if images_response is None:
     print("Failed to fetch images. Check the log file for details.")
     with open(log_file, 'a') as f:
@@ -272,8 +291,10 @@ if failed_images:
 # Print final summary
 print(f"\n=== Processing Complete! ===")
 print(f"Total Images: {total_images}")
-print(f"Successfully Processed: {len(successful_images)} ({round(len(successful_images)/total_images*100, 1)}%)")
-print(f"Failed to Process: {len(failed_images)} ({round(len(failed_images)/total_images*100, 1)}%)")
+success_percent = round(len(successful_images)/total_images*100, 1) if total_images > 0 else 0
+failed_percent = round(len(failed_images)/total_images*100, 1) if total_images > 0 else 0
+print(f"Successfully Processed: {len(successful_images)} ({success_percent}%)")
+print(f"Failed to Process: {len(failed_images)} ({failed_percent}%)")
 print(f"Log file: {log_file}")
 
 if len(failed_images) > 0:
