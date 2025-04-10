@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# coding: utf-8
+
 # %%
 import pandas as pd
 import requests
@@ -41,7 +45,7 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Create a single log file for the entire process
 log_file = os.path.join(logs_dir, f"upload_image_log_{timestamp}.txt")
-log = open(log_file, 'w')
+log = open(log_file, 'w', encoding='utf-8')
 
 # Write initial log information
 log.write(f"=== Upload Kobold Process Log ===\n")
@@ -275,13 +279,13 @@ for index, row in df.iterrows():
         
         if response is not None and response.status_code == 200:
             uploaded_count += 1
-            print(f"Successfully uploaded {os.path.basename(img_path)} ({uploaded_count}/{total_files})")
+            print(f"+ Successfully uploaded {os.path.basename(img_path)} ({uploaded_count}/{total_files})")
             log.write(f"[{datetime.now()}] Successfully uploaded {os.path.basename(img_path)}\n")
         else:
             e += 1
             # Pretty print the detailed error information
             if error_details:
-                print(f"\nERROR uploading {os.path.basename(img_path)} for {name}:")
+                print(f"\n- ERROR uploading {os.path.basename(img_path)} for {name}:")
                 print(error_details)
                 print("-" * 80)  # Add a separator line for better readability
             else:

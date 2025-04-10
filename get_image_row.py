@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# coding: utf-8
+
 # %%
 import pandas as pd
 import requests
@@ -71,7 +75,7 @@ try:
     
     # Save the raw response for debugging
     log_file_path = os.path.join(logs_dir, f"image_row_data_raw_{timestamp}.json")
-    with open(log_file_path, "w") as f:
+    with open(log_file_path, "w", encoding='utf-8') as f:
         json.dump(data, f, indent=4)
         
     print(f"Raw data saved to {log_file_path}")
@@ -178,7 +182,7 @@ except (KeyError, json.JSONDecodeError) as e:
     
     # Save error to log file
     error_log_path = os.path.join(logs_dir, f"error_log_{timestamp}.txt")
-    with open(error_log_path, "w") as f:
+    with open(error_log_path, "w", encoding='utf-8') as f:
         f.write(f"{error_message}\n")
         f.write(f"Response content: {response.text}")
     

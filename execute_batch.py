@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# coding: utf-8
 
 import requests
 import json
@@ -40,7 +41,7 @@ def read_hole_ids():
     Read HoleIDs from sendtobatch.csv file
     """
     hole_ids = []
-    with open('sendtobatch.csv', 'r') as file:
+    with open('sendtobatch.csv', 'r', encoding='utf-8') as file:
         csv_reader = csv.DictReader(file)
         for row in csv_reader:
             hole_ids.append(row['HoleID'])
@@ -132,7 +133,7 @@ def process_image(image_id, workflow_id, accessToken=None):
         return None, error_details
 
 # Initialize logger
-with open(log_file, 'w') as f:
+with open(log_file, 'w', encoding='utf-8') as f:
     f.write(f"=== Batch Image Processing Log ===\n")
     f.write(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     f.write(f"Workflow ID: {workflow_id}\n")
@@ -146,7 +147,7 @@ with open(log_file, 'w') as f:
 token = authenticate(auth_config)
 
 # Log authentication status
-with open(log_file, 'a') as f:
+with open(log_file, 'a', encoding='utf-8') as f:
     if use_credentials and token:
         f.write(f"Authentication successful with username/password\n")
     elif token is None and use_credentials:
@@ -165,7 +166,7 @@ print(f"Fetching images for drill holes: {hole_ids}...")
 images_response = get_all_images(hole_ids, token)
 if images_response is None:
     print("Failed to fetch images. Check the log file for details.")
-    with open(log_file, 'a') as f:
+    with open(log_file, 'a', encoding='utf-8') as f:
         f.write(f"Failed to fetch images at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     exit(1)
 
@@ -173,11 +174,11 @@ try:
     images_data = images_response.json()['result']['items']
     total_images = len(images_data)
     print(f"Found {total_images} images to process")
-    with open(log_file, 'a') as f:
+    with open(log_file, 'a', encoding='utf-8') as f:
         f.write(f"Found {total_images} images to process\n")
 except (KeyError, json.JSONDecodeError) as e:
     print(f"Failed to parse images response: {str(e)}")
-    with open(log_file, 'a') as f:
+    with open(log_file, 'a', encoding='utf-8') as f:
         f.write(f"Failed to parse images response: {str(e)}\n")
     exit(1)
 
@@ -189,7 +190,7 @@ failed_images = []
 print("\nStarting image processing...")
 print(f"Total images to process: {total_images}")
 print("Progress: 0/{} (0%)".format(total_images))
-with open(log_file, 'a') as f:
+with open(log_file, 'a', encoding='utf-8') as f:
     f.write(f"\nStarting image processing at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     f.write(f"Total images to process: {total_images}\n")
 
@@ -210,7 +211,7 @@ for i, image in enumerate(images_data):
     if (i+1) % 10 == 0 or i+1 == total_images:
         print()  # Print a newline
         
-    with open(log_file, 'a') as f:
+    with open(log_file, 'a', encoding='utf-8') as f:
         f.write(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Processing image {i+1}/{total_images}: {filename}\n")
         f.write(f"  Image ID: {image_id}\n")
         f.write(f"  Drill Hole: {drill_hole_name}\n")
@@ -229,14 +230,14 @@ for i, image in enumerate(images_data):
     }
     
     if process_response and process_response.status_code == 200:
-        print(f"  ✓ Successfully processed image: {filename}")
-        with open(log_file, 'a') as f:
-            f.write(f"  ✓ Successfully processed\n")
+        print(f"  + Successfully processed image: {filename}")
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"  + Successfully processed\n")
         successful_images.append(image_info)
     else:
         # Log detailed error information
-        with open(log_file, 'a') as f:
-            f.write(f"  ✗ Failed to process image. Details:\n")
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"  - Failed to process image. Details:\n")
             f.write(f"    Error Type: {error_details['error_type']}\n")
             f.write(f"    Error Message: {error_details['error_message']}\n")
             if error_details['status_code']:
@@ -248,7 +249,7 @@ for i, image in enumerate(images_data):
         
         # Create user-friendly error message
         error_msg = f"{error_details['error_type']}: {error_details['error_message']}"
-        print(f"  ✗ Failed to process image: {filename}")
+        print(f"  - Failed to process image: {filename}")
         print(f"    Error: {error_msg}")
         
         image_info['Error'] = error_msg
@@ -266,7 +267,7 @@ for i, image in enumerate(images_data):
     time.sleep(0.5)
 
 # Write summary to log
-with open(log_file, 'a') as f:
+with open(log_file, 'a', encoding='utf-8') as f:
     f.write(f"\n=== Processing Summary ===\n")
     f.write(f"Total Images: {total_images}\n")
     f.write(f"Successfully Processed: {len(successful_images)}\n")
@@ -275,14 +276,14 @@ with open(log_file, 'a') as f:
 
 # Save successful and failed images to CSV files
 if successful_images:
-    with open(success_file, 'w', newline='') as f:
+    with open(success_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=successful_images[0].keys())
         writer.writeheader()
         writer.writerows(successful_images)
     print(f"\nSuccessful images saved to: {success_file}")
 
 if failed_images:
-    with open(failed_file, 'w', newline='') as f:
+    with open(failed_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=failed_images[0].keys())
         writer.writeheader()
         writer.writerows(failed_images)
