@@ -148,7 +148,7 @@ def create_drill_hole(accessToken, name, projectId, prospectId):
 # create_drill_hole(token, "test", 4, 4)
 
 # %%
-def upload_image(img_path, projectId, prospectId, holeId, c, accessToken=None):
+def upload_image(img_path, projectId, prospectId, holeId, standard_type, accessToken=None):
     """
     Upload an image to the API with detailed error handling.
     
@@ -168,8 +168,8 @@ def upload_image(img_path, projectId, prospectId, holeId, c, accessToken=None):
     # Create a multipart form with all fields together
     multipart_form = {
         'Type': (None, '1'),
-        'ImageClass': (None, str(c)),
-        'StandardType': (None, str(c)),
+        'ImageClass': (None, '1'),
+        'StandardType': (None, str(standard_type)),
         'ProjectId': (None, str(projectId)),
         'ProspectId': (None, str(prospectId)),
         'HoleId': (None, str(holeId)),
@@ -258,19 +258,19 @@ for index, row in df.iterrows():
         end = row['End Number']
         c = row['Condition']
         c = str(c).strip()
-        image_class = 1 if c.lower() == "dry" else 2
-        name = f"{hole_name}_{str(start).rstrip('0').rstrip('.')}_{str(end).rstrip('0').rstrip('.')}_{image_class}"
+        standard_type = 1 if c.lower() == "dry" else 2
+        name = f"{hole_name}_{str(start).rstrip('0').rstrip('.')}_{str(end).rstrip('0').rstrip('.')}_{standard_type}"
         if name in uploaded_files:
             print(f"File already uploaded: {img_path}. Skipped.")
             skipped_count += 1
             log.write(f"[{datetime.now()}] File already uploaded: {img_path}. Skipped.\n")
             continue
         # Log the upload attempt
-        print(f"Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', ImageClass: {image_class}")
-        log.write(f"[{datetime.now()}] Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', ImageClass: {image_class}\n")
+        print(f"Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', StandardType: {standard_type}")
+        log.write(f"[{datetime.now()}] Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', StandardType: {standard_type}\n")
         
         # Perform the upload
-        response, error_details = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], image_class, token)
+        response, error_details = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], standard_type, token)
         
         if response is not None and response.status_code == 200:
             uploaded_count += 1
