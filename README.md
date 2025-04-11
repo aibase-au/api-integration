@@ -77,12 +77,12 @@ Replace the values with your actual credentials. You can use either API_KEY or U
 
 ### Preparing Data for Upload
 
-Before uploading images, you need to create a CSV file named `file_summary.csv` with the following columns:
+Before uploading images, you need to create a CSV file named `filestoupload.csv` with the following columns:
 
-- `Folder`: Drill hole name
-- `Start Number`: Depth from
-- `End Number`: Depth to
-- `Condition`: Image condition (e.g., "Dry" or "Wet")
+- `HoleID`: Drill hole name
+- `BoxFrom`: Depth from
+- `BoxTo`: Depth to
+- `ImageType`: Image condition (e.g., "Dry" or "Wet")
 - `Original Filename`: Original filename
 - `Full Path`: Full path to the image file
 
@@ -140,7 +140,7 @@ This will:
 3. Save lists of uploaded files and drill holes as CSV files
 
 ## Example Workflow
-
+1. Prepare your `filestoupload.csv` file with image information
 1. Prepare your `file_summary.csv` file with image information
 2. Create a `.env` file with your API credentials
 3. Run `upload_image.py` to upload images
@@ -162,10 +162,10 @@ API_ENDPOINT=https://api-portal1.fastgeo.com.au/api
 
 You can use either API_KEY or USERNAME/PASSWORD for authentication.
 
-## Sample file_summary.csv
+## Sample filestoupload.csv
 
 ```csv
-Folder,Start Number,End Number,Condition,Original Filename,Full Path
+HoleID,BoxFrom,BoxTo,ImageType,Original Filename,Full Path
 KA-022,168.35,171.15,Dry,KA-022_168.35_171.15_Dry_full.jpg,Platypus Valley/Little River/KA-022/Standard/Original_Dry/KA-022_168.35_171.15_Dry_full.jpg
 KA-022,171.15,173.81,Dry,KA-022_171.15_173.81_Dry_full.jpg,Platypus Valley/Little River/KA-022/Standard/Original_Dry/KA-022_171.15_173.81_Dry_full.jpg
 ```
@@ -181,7 +181,7 @@ KA-022,171.15,173.81,Dry,KA-022_171.15_173.81_Dry_full.jpg,Platypus Valley/Littl
 ### Upload Failures
 
 - Check the logs in `logs/upload_image/fail/` for details on failed uploads
-- Verify that the image files exist at the paths specified in `file_summary.csv`
+- Verify that the image files exist at the paths specified in `filestoupload.csv`
 - Ensure the image files are in a supported format (JPG, PNG)
 
 ### API Connection Issues
