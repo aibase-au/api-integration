@@ -166,31 +166,18 @@ def get_all_image_row_data(projectId, prospectId, accessToken=None, batch_size=1
     
     return combined_result
 
-def process_image_row_data(response_data, timestamp, drill_hole_name=None):
+def process_image_row_data(response_data):
     """
-    Process the image row data and save summaries to files
+    Process the image row data and extract structured summaries
     
     Args:
         response_data: The API response data
-        timestamp: Timestamp for file naming
-        drill_hole_name: Optional drill hole name for file naming
         
     Returns:
-        Tuple containing summary_data and detailed_summary
+        Tuple containing summary_data, detailed_summary, and raw items
     """
     try:
         data = response_data
-        
-        # File name suffix for specific drill hole
-        file_suffix = f"_{drill_hole_name}" if drill_hole_name else ""
-        
-        # Save the raw response for debugging
-        log_file_path = os.path.join(logs_dir, f"image_row_data_raw{file_suffix}_{timestamp}.json")
-        with open(log_file_path, "w", encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-            
-        print(f"Raw data saved to {log_file_path}")
-        print(f"Retrieved a total of {data['result']['totalCount']} records")
         
         # Extract relevant data for the summary
         items = data['result']['items']
@@ -235,15 +222,6 @@ def process_image_row_data(response_data, timestamp, drill_hole_name=None):
                     'originalX': ocr_original_x
                 })
         
-        # Create a DataFrame for easier manipulation
-        df = pd.DataFrame(summary_data)
-        
-        # Create CSV summary
-        output_csv = os.path.join(success_dir, f"image_row_summary{file_suffix}_{timestamp}.csv")
-        df.to_csv(output_csv, index=False)
-        
-        print(f"Image row data summary saved to {output_csv}")
-        
         # Create a more detailed summary with core outlines information
         detailed_summary = []
         
@@ -279,29 +257,11 @@ def process_image_row_data(response_data, timestamp, drill_hole_name=None):
                         'numPoints': len(points)
                     })
         
-        # Create DataFrame for detailed summary
-        df_detailed = pd.DataFrame(detailed_summary)
-        
-        # Create detailed CSV summary
-        detailed_output_csv = os.path.join(success_dir, f"image_row_detailed{file_suffix}_{timestamp}.csv")
-        df_detailed.to_csv(detailed_output_csv, index=False)
-        
-        print(f"Detailed image row data with row boundaries saved to {detailed_output_csv}")
-        
-        # Return the processed data for merging
+        # Return the processed data
         return summary_data, detailed_summary, items
         
     except (KeyError, json.JSONDecodeError) as e:
-        error_message = f"Failed to parse response: {str(e)}"
-        print(error_message)
-        
-        # Save error to log file
-        error_log_path = os.path.join(logs_dir, f"error_log{file_suffix}_{timestamp}.txt")
-        with open(error_log_path, "w", encoding='utf-8') as f:
-            f.write(f"{error_message}\n")
-            f.write(f"Response content: {json.dumps(response_data) if response_data else 'No response data'}")
-        
-        print(f"Error log saved to {error_log_path}")
+        print(f"Failed to parse response: {str(e)}")
         if response_data:
             print(f"Response content: {json.dumps(response_data, indent=2)}")
         return [], [], []
@@ -333,13 +293,14 @@ def main():
             continue
         
         # Process the response data and get the results
-        summary_data, detailed_summary, items = process_image_row_data(response_data, timestamp, drill_hole)
+        summary_data, detailed_summary, items = process_image_row_data(response_data)
         
         # Add to merged data
         all_summary_data.extend(summary_data)
         all_detailed_summary.extend(detailed_summary)
         all_items.extend(items)
         total_records += len(items)
+        print(f"Added {len(items)} items from {drill_hole}.")
     
     # Create merged result structure
     merged_result = {
@@ -349,25 +310,25 @@ def main():
         }
     }
     
-    # Save merged JSON file
-    merged_json_path = os.path.join(success_dir, f"merged_image_row_data_{timestamp}.json")
-    with open(merged_json_path, "w", encoding='utf-8') as f:
+    # Save single raw JSON file (without drill hole in filename)
+    json_file_path = os.path.join(logs_dir, f"image_row_data_raw_{timestamp}.json")
+    with open(json_file_path, "w", encoding='utf-8') as f:
         json.dump(merged_result, f, indent=4)
+    print(f"Raw data from all drill holes saved to {json_file_path}")
     
-    print(f"\nMerged JSON data saved to {merged_json_path}")
-    
-    # Create merged CSV files
+    # Create single CSV summary (without drill hole in filename)
     if all_summary_data:
-        merged_summary_csv = os.path.join(success_dir, f"merged_image_row_summary_{timestamp}.csv")
-        pd.DataFrame(all_summary_data).to_csv(merged_summary_csv, index=False)
-        print(f"Merged summary CSV saved to {merged_summary_csv}")
+        summary_csv = os.path.join(success_dir, f"image_row_summary_{timestamp}.csv")
+        pd.DataFrame(all_summary_data).to_csv(summary_csv, index=False)
+        print(f"Summary data from all drill holes saved to {summary_csv}")
     
+    # Create single detailed CSV summary (without drill hole in filename)
     if all_detailed_summary:
-        merged_detailed_csv = os.path.join(success_dir, f"merged_image_row_detailed_{timestamp}.csv")
-        pd.DataFrame(all_detailed_summary).to_csv(merged_detailed_csv, index=False)
-        print(f"Merged detailed CSV saved to {merged_detailed_csv}")
+        detailed_csv = os.path.join(success_dir, f"image_row_detailed_{timestamp}.csv")
+        pd.DataFrame(all_detailed_summary).to_csv(detailed_csv, index=False)
+        print(f"Detailed data from all drill holes saved to {detailed_csv}")
     
-    print("\nAll drill holes processed successfully.")
+    print(f"\nAll {len(drill_holes)} drill holes processed and combined into single output files.")
 
 if __name__ == "__main__":
     main()
