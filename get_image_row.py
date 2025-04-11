@@ -41,12 +41,22 @@ if token is None and use_credentials:
     exit(1)
 
 
-def get_image_row_data(projectId, prospectId, accessToken=None):
+def get_image_row_data(projectId, prospectId, accessToken=None, skip_count=0, max_result_count=100):
     """
     Get image row data from the API
     This includes manual corrections by the user adjusting line segments and block depths
+    
+    Args:
+        projectId: Project ID
+        prospectId: Prospect ID
+        accessToken: Authentication token
+        skip_count: Number of records to skip
+        max_result_count: Maximum number of records to return per request
+        
+    Returns:
+        Response JSON data if successful, None otherwise
     """
-    url = f"{api_endpoint}/services/app/Image/GetDetailByRow?projectId={projectId}&prospectId={prospectId}"
+    url = f"{api_endpoint}/services/app/Image/GetDetailByRow?projectId={projectId}&prospectId={prospectId}&SkipCount={skip_count}&MaxResultCount={max_result_count}"
     
     payload = {}
     headers = get_request_headers(api_key, use_api_key, api_endpoint, accessToken)
@@ -54,7 +64,7 @@ def get_image_row_data(projectId, prospectId, accessToken=None):
     try:
         response = requests.request("GET", url, headers=headers, data=payload)
         response.raise_for_status()  # Raise an exception for bad status codes
-        return response
+        return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Get image row data request failed: {str(e)}")
         if 'response' in locals():
@@ -62,16 +72,78 @@ def get_image_row_data(projectId, prospectId, accessToken=None):
             print(f"Response content: {response.text}")
         return None
 
-# Make the API call to get image row data
-response = get_image_row_data(projectId, prospectId, token)  # token will be None if using API key
+def get_all_image_row_data(projectId, prospectId, accessToken=None, batch_size=100):
+    """
+    Get all image row data by making multiple API calls until all results are retrieved
+    
+    Args:
+        projectId: Project ID
+        prospectId: Prospect ID
+        accessToken: Authentication token
+        batch_size: Number of records to retrieve per API call
+        
+    Returns:
+        Combined results from all API calls
+    """
+    all_items = []
+    skip_count = 0
+    total_count = None
+    
+    print("Retrieving all image row data...")
+    
+    while total_count is None or skip_count < total_count:
+        print(f"Fetching batch: skip={skip_count}, max={batch_size}")
+        
+        # Get the current batch of results
+        response_data = get_image_row_data(
+            projectId,
+            prospectId,
+            accessToken,
+            skip_count=skip_count,
+            max_result_count=batch_size
+        )
+        
+        if response_data is None:
+            print("Failed to get image row data. Please check your parameters and try again.")
+            exit(1)
+        
+        # Update the total count
+        if total_count is None:
+            total_count = response_data['result']['totalCount']
+            print(f"Total records to retrieve: {total_count}")
+        
+        # Add the items from this batch to our collection
+        items = response_data['result']['items']
+        all_items.extend(items)
+        print(f"Retrieved {len(items)} items. Total so far: {len(all_items)}/{total_count}")
+        
+        # Increment the skip count for the next batch
+        skip_count += len(items)
+        
+        # If we didn't get as many items as we requested, we're done
+        if len(items) < batch_size:
+            break
+    
+    # Create a result structure similar to the original API response
+    combined_result = {
+        'result': {
+            'totalCount': total_count,
+            'items': all_items
+        }
+    }
+    
+    return combined_result
 
-if response is None:
+# Make the API call to get all image row data
+response_data = get_all_image_row_data(projectId, prospectId, token)  # token will be None if using API key
+
+if response_data is None:
     print("Failed to get image row data. Please check your parameters and try again.")
     exit(1)
 
 # Process the response
 try:
-    data = response.json()
+    data = response_data  # Already in JSON format
     
     # Save the raw response for debugging
     log_file_path = os.path.join(logs_dir, f"image_row_data_raw_{timestamp}.json")
@@ -79,6 +151,7 @@ try:
         json.dump(data, f, indent=4)
         
     print(f"Raw data saved to {log_file_path}")
+    print(f"Retrieved a total of {data['result']['totalCount']} records")
     
     # Extract relevant data for the summary
     items = data['result']['items']
@@ -184,8 +257,9 @@ except (KeyError, json.JSONDecodeError) as e:
     error_log_path = os.path.join(logs_dir, f"error_log_{timestamp}.txt")
     with open(error_log_path, "w", encoding='utf-8') as f:
         f.write(f"{error_message}\n")
-        f.write(f"Response content: {response.text}")
+        f.write(f"Response content: {json.dumps(response_data) if response_data else 'No response data'}")
     
     print(f"Error log saved to {error_log_path}")
-    print(f"Response content: {response.text}")
+    if response_data:
+        print(f"Response content: {json.dumps(response_data, indent=2)}")
     exit(1)

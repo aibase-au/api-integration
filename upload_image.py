@@ -22,12 +22,12 @@ use_credentials = auth_config['use_credentials']
 num_errors = 1
 
 # %%
-df = pd.read_csv('filetoupload.csv')
+df = pd.read_csv('FilesToUpload.csv')
 
-hole_names = df['Folder'].values
+hole_names = df['HoleID'].values
 depth_from = df["BoxFrom"].values
 depth_to = df["BoxTo"].values
-conditions = df["Condition"].values
+image_types = df["ImageType"].values
 paths = df["Full Path"].values
 
 # Create necessary directories for logs and results
@@ -62,16 +62,16 @@ for index, row in df.iterrows():
     line_number = index + 2  # +2 because of 0-based index and header row
     log.write(f"{index + 1}. File: {row['Original Filename']}\n")
     log.write(f"   Line Number: {line_number}\n")
-    log.write(f"   Drill Hole: {row['Folder']}\n")
-    log.write(f"   Condition: {row['Condition']}\n")
+    log.write(f"   Drill Hole: {row['HoleID']}\n")
+    log.write(f"   Image Type: {row['ImageType']}\n")
     log.write(f"   Full Path: {row['Full Path']}\n")
     log.write(f"   Depth Range: {row['BoxFrom']} - {row['BoxTo']}\n")
     log.write("\n")
 
 log.write("\n=== Processing Summary ===\n")
 log.write(f"Total Files: {len(df)}\n")
-log.write(f"Total Drill Holes: {len(df['Folder'].unique())}\n")
-log.write(f"Unique Conditions: {set(df['Condition'].values)}\n\n")
+log.write(f"Total Drill Holes: {len(df['HoleID'].unique())}\n")
+log.write(f"Unique Image Types: {set(df['ImageType'].values)}\n\n")
 
 print(f"Log file created: {log_file}")
 
@@ -257,13 +257,13 @@ log.write("\n=== File Upload Log ===\n")
 print("\nStarting file uploads...")
 for index, row in df.iterrows():
     try:
-        hole_name = row['Folder']
+        hole_name = row['HoleID']
         img_path = row['Full Path']
         start = row['BoxFrom']
         end = row['BoxTo']
-        c = row['Condition']
-        c = str(c).strip()
-        standard_type = 1 if c.lower() == "dry" else 2
+        image_type = row['ImageType']
+        image_type = str(image_type).strip()
+        standard_type = 1 if image_type.lower() == "dry" else 2
         name = f"{hole_name}_{str(start).rstrip('0').rstrip('.')}_{str(end).rstrip('0').rstrip('.')}_{standard_type}"
         if name in uploaded_files:
             print(f"File already uploaded: {img_path}. Skipped.")
@@ -271,8 +271,8 @@ for index, row in df.iterrows():
             log.write(f"[{datetime.now()}] File already uploaded: {img_path}. Skipped.\n")
             continue
         # Log the upload attempt
-        print(f"Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', StandardType: {standard_type}")
-        log.write(f"[{datetime.now()}] Going to upload: {os.path.basename(img_path)}, Raw Condition: '{c}', StandardType: {standard_type}\n")
+        print(f"Going to upload: {os.path.basename(img_path)}, Raw Image Type: '{image_type}', StandardType: {standard_type}")
+        log.write(f"[{datetime.now()}] Going to upload: {os.path.basename(img_path)}, Raw Image Type: '{image_type}', StandardType: {standard_type}\n")
         
         # Perform the upload
         response, error_details = upload_image(img_path, projectId, prospectId, list_of_drill_holes[hole_name], standard_type, start, end, token )
@@ -298,11 +298,11 @@ for index, row in df.iterrows():
             
             # Add to failed uploads list with the same format as file_summary.csv (without error details)
             failed_uploads.append({
-                'Folder': hole_name,
+                'HoleID': hole_name,
                 'BoxFrom': start,
                 'BoxTo': end,
                 'Range': end - start,
-                'Condition': c,
+                'ImageType': image_type,
                 'Original Filename': os.path.basename(img_path),
                 'Full Path': img_path
             })
@@ -319,11 +319,11 @@ for index, row in df.iterrows():
         log.write(f"[{datetime.now()}] Error when uploading images for {name}: {str(ex)}\n")
         # Add to failed uploads list with the same format as file_summary.csv (without error details)
         failed_uploads.append({
-            'Folder': hole_name,
+            'HoleID': hole_name,
             'BoxFrom': start,
             'BoxTo': end,
             'Range': end - start,
-            'Condition': c,
+            'ImageType': image_type,
             'Original Filename': os.path.basename(img_path),
             'Full Path': img_path
         })
