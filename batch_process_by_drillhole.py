@@ -1,38 +1,36 @@
-#!/usr/bin/env python3
-"""
-FastGeo batch image processing demo.
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# coding: utf-8
 
-Workflow:
-  1. GET  DrillHole/Get — resolve drill hole name
-  2. POST WorkflowJob/Create — create batch (status NotStart)
+"""
+FastGeo full drill-hole batch processing.
+
+Runs an entire drill hole through a workflow as a single batch job:
+  1. GET  DrillHole/Get        — resolve drill hole name
+  2. POST WorkflowJob/Create   — create batch (status NotStart)
   3. POST WorkflowJob/RerunJob — start processing
-  4. GET  WorkflowJob/Get — poll every 5s until terminal status
+  4. GET  WorkflowJob/Get      — poll until a terminal status
   5. GET  Image/GetDetailByRow — fetch OCR / row detail on success
 
-Required API key roles: ProcessBatch, GetDrillhole (for drill hole name), GetImageRowData
+Configuration is read from the .env file (see README and authentication.py).
+Authentication supports either API_KEY or USERNAME/PASSWORD.
+
+Required API key roles: ProcessBatch, GetDrillhole, GetImageRowData.
 
 Usage:
-  export FASTGEO_API_KEY="your-key"
-  export PROJECT_ID=145 PROSPECT_ID=35 DRILLHOLE_ID=626 WORKFLOW_ID=52 IMAGE_TYPE_ID=91
-  python batch_process_demo.py
-
-Optional env vars: FASTGEO_BASE_URL (default: production API), IMAGE_SUBTYPE_ID,
-                   IMAGE_CATEGORY, IS_ONLY_NEW_IMAGES, POLL_INTERVAL_SEC, OUTPUT_FILE,
-                   BATCH_NAME, DRILLHOLE_NAME
+  python batch_process.py
 """
-
-from __future__ import annotations
 
 import json
 import os
 import sys
 import time
-from typing import Any
 
 import requests
 
-DEFAULT_BASE_URL = "https://api-portal1.fastgeo.com.au"
-POLL_INTERVAL_SEC = 5
+from authentication import init_auth, authenticate, get_request_headers
+
+DEFAULT_POLL_INTERVAL_SEC = 5
 TERMINAL_STATUSES = {3, 4, 5}  # Completed, Failed, Canceled
 STATUS_LABELS = {
     1: "NotStart",
@@ -43,9 +41,10 @@ STATUS_LABELS = {
 }
 
 
-def env_int(name: str, required: bool = True) -> int | None:
-    raw = os.environ.get(name)
-    if raw is None or raw == "":
+def env_int(name, required=True):
+    """Read an integer environment variable (loaded from .env by init_auth)."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
         if required:
             print(f"Missing required environment variable: {name}", file=sys.stderr)
             sys.exit(1)
@@ -53,28 +52,33 @@ def env_int(name: str, required: bool = True) -> int | None:
     return int(raw)
 
 
-def env_bool(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None or raw == "":
+def env_bool(name, default=False):
+    """Read a boolean environment variable (true/1/yes/y => True)."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
         return default
-    return raw.lower() in ("1", "true", "yes", "y")
+    return raw.strip().lower() in ("1", "true", "yes", "y")
 
 
 class FastGeoClient:
-    def __init__(self, base_url: str, api_key: str) -> None:
-        self.base_url = base_url.rstrip("/")
+    """Thin wrapper around the FastGeo API using the shared auth headers."""
+
+    def __init__(self, api_endpoint, api_key, use_api_key, token=None):
+        self.api_endpoint = api_endpoint.rstrip("/")
+        self.api_key = api_key
+        self.use_api_key = use_api_key
+        self.token = token
         self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "X-API-Key": api_key,
-                "Accept": "application/json",
-            }
+
+    def _headers(self):
+        return get_request_headers(
+            self.api_key, self.use_api_key, self.api_endpoint, self.token
         )
 
-    def _url(self, path: str) -> str:
-        return f"{self.base_url}{path}"
+    def _url(self, path):
+        return f"{self.api_endpoint}{path}"
 
-    def _check_abp_result(self, response: requests.Response) -> Any:
+    def _check_abp_result(self, response):
         if not response.ok:
             body = response.text.strip()
             if body:
@@ -88,39 +92,41 @@ class FastGeoClient:
             raise RuntimeError(f"API error: {message}")
         return payload.get("result", payload)
 
-    def get_drillhole(self, drillhole_id: int) -> dict[str, Any]:
+    def get_drillhole(self, drillhole_id):
         response = self.session.get(
-            self._url("/api/services/app/DrillHole/Get"),
+            self._url("/services/app/DrillHole/Get"),
             params={"Id": drillhole_id},
+            headers=self._headers(),
         )
         result = self._check_abp_result(response)
         if not isinstance(result, dict):
             raise RuntimeError(f"Unexpected DrillHole/Get response: {result!r}")
         return result
 
-    def create_batch(self, body: dict[str, Any]) -> dict[str, Any]:
+    def create_batch(self, body):
         response = self.session.post(
-            self._url("/api/services/app/WorkflowJob/Create"),
+            self._url("/services/app/WorkflowJob/Create"),
             json=body,
-            headers={"Content-Type": "application/json"},
+            headers=self._headers(),
         )
         result = self._check_abp_result(response)
         if not isinstance(result, dict):
             raise RuntimeError(f"Unexpected Create response: {result!r}")
         return result
 
-    def start_batch(self, job_id: int) -> None:
+    def start_batch(self, job_id):
         response = self.session.post(
-            self._url("/api/services/app/WorkflowJob/RerunJob"),
+            self._url("/services/app/WorkflowJob/RerunJob"),
             json={"id": job_id},
-            headers={"Content-Type": "application/json"},
+            headers=self._headers(),
         )
         self._check_abp_result(response)
 
-    def get_workflow_job(self, job_id: int) -> dict[str, Any]:
+    def get_workflow_job(self, job_id):
         response = self.session.get(
-            self._url("/api/services/app/WorkflowJob/Get"),
+            self._url("/services/app/WorkflowJob/Get"),
             params={"Id": job_id},
+            headers=self._headers(),
         )
         result = self._check_abp_result(response)
         if not isinstance(result, dict):
@@ -129,13 +135,13 @@ class FastGeoClient:
 
     def get_detail_by_row(
         self,
-        project_id: int,
-        prospect_id: int | None,
-        drill_hole_id: int | None,
-        skip_count: int = 0,
-        max_result_count: int = 1000,
-    ) -> dict[str, Any]:
-        params: dict[str, Any] = {
+        project_id,
+        prospect_id=None,
+        drill_hole_id=None,
+        skip_count=0,
+        max_result_count=1000,
+    ):
+        params = {
             "ProjectId": project_id,
             "skipCount": skip_count,
             "maxResultCount": max_result_count,
@@ -146,8 +152,9 @@ class FastGeoClient:
             params["DrillHoleId"] = drill_hole_id
 
         response = self.session.get(
-            self._url("/api/services/app/Image/GetDetailByRow"),
+            self._url("/services/app/Image/GetDetailByRow"),
             params=params,
+            headers=self._headers(),
         )
         result = self._check_abp_result(response)
         if not isinstance(result, dict):
@@ -155,11 +162,7 @@ class FastGeoClient:
         return result
 
 
-def poll_until_terminal(
-    client: FastGeoClient,
-    job_id: int,
-    interval_sec: float,
-) -> dict[str, Any]:
+def poll_until_terminal(client, job_id, interval_sec):
     while True:
         job = client.get_workflow_job(job_id)
         status = job.get("status")
@@ -178,12 +181,12 @@ def poll_until_terminal(
         time.sleep(interval_sec)
 
 
-def resolve_batch_name(client: FastGeoClient, drillhole_id: int) -> str:
-    override = os.environ.get("BATCH_NAME")
+def resolve_batch_name(client, drillhole_id):
+    override = os.getenv("BATCH_NAME")
     if override:
         return override
 
-    env_name = os.environ.get("DRILLHOLE_NAME")
+    env_name = os.getenv("DRILLHOLE_NAME")
     if env_name:
         return f"Process drillhole {env_name}"
 
@@ -202,19 +205,18 @@ def resolve_batch_name(client: FastGeoClient, drillhole_id: int) -> str:
 
 
 def build_batch_body(
-    *,
-    batch_name: str,
-    project_id: int,
-    prospect_id: int,
-    drillhole_id: int,
-    workflow_id: int,
-    image_type_id: int,
-    image_subtype_id: int | None,
-    image_category: int | None,
-) -> dict[str, Any]:
-    body: dict[str, Any] = {
+    batch_name,
+    project_id,
+    prospect_id,
+    drillhole_id,
+    workflow_id,
+    image_type_id,
+    image_subtype_id,
+    image_category,
+):
+    body = {
         "name": batch_name,
-        "description": "Created by batch_process_demo.py",
+        "description": "Created by batch_process.py",
         "projectId": project_id,
         "prospectId": prospect_id,
         "drillholeId": drillhole_id,
@@ -229,26 +231,46 @@ def build_batch_body(
     return body
 
 
-def main() -> None:
-    api_key = os.environ.get("FASTGEO_API_KEY")
-    if not api_key:
-        print("Set FASTGEO_API_KEY environment variable.", file=sys.stderr)
+def main():
+    # Load configuration and authentication from the .env file
+    auth_config = init_auth()
+    api_endpoint = auth_config["api_endpoint"]
+    api_key = auth_config["api_key"]
+    use_api_key = auth_config["use_api_key"]
+    use_credentials = auth_config["use_credentials"]
+
+    project_id = auth_config["projectId"]
+    prospect_id = auth_config["prospectId"]
+    workflow_id = auth_config["workflow_id"]
+
+    # Validate the IDs that init_auth defaults to 0 / None
+    if not project_id:
+        print("Missing required environment variable: PROJECT_ID", file=sys.stderr)
+        sys.exit(1)
+    if not prospect_id:
+        print("Missing required environment variable: PROSPECT_ID", file=sys.stderr)
+        sys.exit(1)
+    if not workflow_id:
+        print("Missing required environment variable: WORKFLOW_ID", file=sys.stderr)
         sys.exit(1)
 
-    base_url = os.environ.get("FASTGEO_BASE_URL", DEFAULT_BASE_URL)
-    project_id = env_int("PROJECT_ID")
-    prospect_id = env_int("PROSPECT_ID")
     drillhole_id = env_int("DRILLHOLE_ID")
-    workflow_id = env_int("WORKFLOW_ID")
     image_type_id = env_int("IMAGE_TYPE_ID")
     image_subtype_id = env_int("IMAGE_SUBTYPE_ID", required=False)
     image_category = env_int("IMAGE_CATEGORY", required=False)
-    poll_interval = float(os.environ.get("POLL_INTERVAL_SEC", POLL_INTERVAL_SEC))
-    output_file = os.environ.get("OUTPUT_FILE", "detail_by_row.json")
+    poll_interval = float(os.getenv("POLL_INTERVAL_SEC", DEFAULT_POLL_INTERVAL_SEC))
+    output_file = os.getenv("OUTPUT_FILE", "detail_by_row.json")
 
-    print(f"Base URL: {base_url}")
+    print(f"API endpoint: {api_endpoint}")
 
-    client = FastGeoClient(base_url, api_key)
+    # Resolve the authentication token (None when using an API key)
+    token = authenticate(auth_config)
+    if token is None and use_credentials:
+        print("Authentication failed. Check your credentials in .env.", file=sys.stderr)
+        sys.exit(1)
+
+    client = FastGeoClient(api_endpoint, api_key, use_api_key, token)
+
     batch_body = build_batch_body(
         batch_name=resolve_batch_name(client, drillhole_id),
         project_id=project_id,
@@ -266,7 +288,8 @@ def main() -> None:
     job = client.create_batch(batch_body)
     job_id = job["id"]
     print(
-        f"  Created job id={job_id}, status={STATUS_LABELS.get(job.get('status'), job.get('status'))}"
+        f"  Created job id={job_id}, "
+        f"status={STATUS_LABELS.get(job.get('status'), job.get('status'))}"
     )
 
     print("Step 2: Start batch (RerunJob)...")
@@ -279,8 +302,8 @@ def main() -> None:
 
     if final_status != 3:
         print(
-            f"Batch finished with status {STATUS_LABELS.get(final_status, final_status)}. "
-            "Skipping GetDetailByRow.",
+            f"Batch finished with status "
+            f"{STATUS_LABELS.get(final_status, final_status)}. Skipping GetDetailByRow.",
             file=sys.stderr,
         )
         if final_job.get("failedImageIds"):
@@ -307,11 +330,9 @@ if __name__ == "__main__":
     try:
         main()
     except requests.ConnectionError as exc:
-        base_url = os.environ.get("FASTGEO_BASE_URL", DEFAULT_BASE_URL)
         print(
-            f"Cannot connect to {base_url}.\n"
-            "  - For production: unset FASTGEO_BASE_URL or omit it (default is production).\n"
-            "  - For local dev: start the backend, then export FASTGEO_BASE_URL=http://localhost:8080",
+            "Cannot connect to the API. Check API_ENDPOINT in your .env file "
+            "(for local dev, start the backend and set API_ENDPOINT accordingly).",
             file=sys.stderr,
         )
         print(f"Details: {exc}", file=sys.stderr)

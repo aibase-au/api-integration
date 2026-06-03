@@ -18,12 +18,11 @@ The project includes several scripts for different operations:
 |---|---|---|
 | Granularity | One image at a time (`Image/ProcessImage`) | Whole drill hole as a single batch (`WorkflowJob`) |
 | Workflow | Fetch images, loop, process each | Create batch → start → poll until done → fetch results |
-| Config source | `.env` via `authentication.py` | Environment variables read directly |
-| Input | `sendtobatch.csv` (hole IDs) | `DRILLHOLE_ID` env var |
+| Input | `sendtobatch.csv` (hole IDs) | `DRILLHOLE_ID` in `.env` |
 | Output | Success/failure CSVs in `logs/` | `detail_by_row.json` (OCR / row detail) |
 | Drill-hole context | Per image | Full drill-hole context (recommended for Block OCR) |
 
-Use `batch_process.py` when OCR or AI workflows need full drill-hole context (recommended for Block OCR); use `execute_batch.py` for selective, per-image processing.
+Both scripts share the same `.env` and `authentication.py` (API key or username/password). Use `batch_process.py` when OCR or AI workflows need full drill-hole context (recommended for Block OCR); use `execute_batch.py` for selective, per-image processing.
 
 ## Prerequisites
 
@@ -83,9 +82,15 @@ API_KEY=<your_api_key>
 USERNAME=<your_username>
 PASSWORD=<your_password>
 API_ENDPOINT=https://api-portal1.fastgeo.com.au/api
+
+# Additional variables used by batch_process.py
+DRILLHOLE_ID=<your_drillhole_id>
+IMAGE_TYPE_ID=<your_image_type_id>
 ```
 
 Replace the values with your actual credentials. You can use either API_KEY or USERNAME/PASSWORD for authentication.
+
+`DRILLHOLE_ID` and `IMAGE_TYPE_ID` are only required for `batch_process.py`; the other scripts ignore them. See [Running a Full Drill-Hole Batch](#running-a-full-drill-hole-batch) for the optional variables that script also supports.
 
 ## Usage Instructions
 
@@ -129,16 +134,11 @@ This will:
 
 ### Running a Full Drill-Hole Batch
 
-To run an entire drill hole through a workflow as a single batch job (create → start → poll → fetch results), use `batch_process.py`. Unlike `execute_batch.py`, this script is configured entirely through environment variables and does not use `authentication.py` or the `.env` loader.
+To run an entire drill hole through a workflow as a single batch job (create → start → poll → fetch results), use `batch_process.py`. Like the other scripts, it reads its configuration from the `.env` file and authenticates with either `API_KEY` or `USERNAME`/`PASSWORD`.
+
+Add `DRILLHOLE_ID` and `IMAGE_TYPE_ID` to your `.env` (in addition to `PROJECT_ID`, `PROSPECT_ID`, `WORKFLOW_ID`, and your credentials), then run:
 
 ```bash
-export FASTGEO_API_KEY="your-api-key"
-export PROJECT_ID=145
-export PROSPECT_ID=35
-export DRILLHOLE_ID=626
-export WORKFLOW_ID=52
-export IMAGE_TYPE_ID=91
-
 python batch_process.py
 ```
 
@@ -151,22 +151,22 @@ This will:
 
 **Required API key roles:** ProcessBatch, GetDrillhole, GetImageRowData
 
-#### Required environment variables
+#### Required `.env` variables
 
 | Variable | Description |
 |----------|-------------|
-| `FASTGEO_API_KEY` | API key with ProcessBatch, GetDrillhole, GetImageRowData roles. |
 | `PROJECT_ID` | Project ID. |
 | `PROSPECT_ID` | Prospect ID. |
-| `DRILLHOLE_ID` | Drill hole ID to process. |
 | `WORKFLOW_ID` | Workflow ID (e.g. Block OCR workflow). |
+| `DRILLHOLE_ID` | Drill hole ID to process. |
 | `IMAGE_TYPE_ID` | Image type ID to include in the batch. |
+| `API_KEY` *or* `USERNAME`/`PASSWORD` | Authentication (same as the other scripts). |
+| `API_ENDPOINT` | API root URL (defaults to production). |
 
-#### Optional environment variables
+#### Optional `.env` variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FASTGEO_BASE_URL` | `https://api-portal1.fastgeo.com.au` | API root URL (omit for production). |
 | `IMAGE_SUBTYPE_ID` | — | Filter batch to a specific image subtype. |
 | `IMAGE_CATEGORY` | — | Image category filter. |
 | `IS_ONLY_NEW_IMAGES` | `false` | When `true`/`1`/`yes`, process only new images. |
@@ -174,8 +174,6 @@ This will:
 | `OUTPUT_FILE` | `detail_by_row.json` | Path for the GetDetailByRow JSON output. |
 | `BATCH_NAME` | auto | Override batch name (skips drill hole lookup). |
 | `DRILLHOLE_NAME` | auto | Use `Process drillhole {name}` without calling DrillHole/Get. |
-
-> Note: `batch_process.py` authenticates with the `X-API-Key` header and reads `FASTGEO_API_KEY` (not the `API_KEY` used by the other scripts).
 
 #### Job status codes
 
@@ -234,6 +232,10 @@ API_KEY=your_api_key_here
 USERNAME=your_username_here
 PASSWORD=your_password_here
 API_ENDPOINT=https://api-portal1.fastgeo.com.au/api
+
+# Used by batch_process.py
+DRILLHOLE_ID=626
+IMAGE_TYPE_ID=91
 ```
 
 You can use either API_KEY or USERNAME/PASSWORD for authentication.
