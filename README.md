@@ -7,9 +7,23 @@ This project is a set of Python scripts for managing, uploading, and processing 
 The project includes several scripts for different operations:
 
 - `upload_image.py`: Uploads drill core images to the FastGeo API
-- `execute_batch.py`: Processes uploaded images through a specific workflow
+- `execute_batch.py`: Processes uploaded images one-by-one through a workflow (`Image/ProcessImage`)
+- `batch_process.py`: Runs the full drill-hole batch workflow end-to-end (create → start → poll → fetch OCR / row detail) via the `WorkflowJob` API
 - `get_image_row.py`: Retrieves row-specific data for images, including OCR text, core outlines, polygon, v.v
 - `get_upload_list.py`: Gets lists of uploaded files and drill holes
+
+### `execute_batch.py` vs `batch_process.py`
+
+| | `execute_batch.py` | `batch_process.py` |
+|---|---|---|
+| Granularity | One image at a time (`Image/ProcessImage`) | Whole drill hole as a single batch (`WorkflowJob`) |
+| Workflow | Fetch images, loop, process each | Create batch → start → poll until done → fetch results |
+| Config source | `.env` via `authentication.py` | Environment variables read directly |
+| Input | `sendtobatch.csv` (hole IDs) | `DRILLHOLE_ID` env var |
+| Output | Success/failure CSVs in `logs/` | `detail_by_row.json` (OCR / row detail) |
+| Drill-hole context | Per image | Full drill-hole context (recommended for Block OCR) |
+
+Use `batch_process.py` when OCR or AI workflows need full drill-hole context (recommended for Block OCR); use `execute_batch.py` for selective, per-image processing.
 
 ## Prerequisites
 
@@ -113,6 +127,66 @@ This will:
 2. Process each image with the specified workflow
 3. Log the results and generate CSV files with successful and failed operations
 
+### Running a Full Drill-Hole Batch
+
+To run an entire drill hole through a workflow as a single batch job (create → start → poll → fetch results), use `batch_process.py`. Unlike `execute_batch.py`, this script is configured entirely through environment variables and does not use `authentication.py` or the `.env` loader.
+
+```bash
+export FASTGEO_API_KEY="your-api-key"
+export PROJECT_ID=145
+export PROSPECT_ID=35
+export DRILLHOLE_ID=626
+export WORKFLOW_ID=52
+export IMAGE_TYPE_ID=91
+
+python batch_process.py
+```
+
+This will:
+1. Resolve the drill hole name via `DrillHole/Get`
+2. Create a batch with `WorkflowJob/Create` (status NotStart)
+3. Start processing with `WorkflowJob/RerunJob`
+4. Poll `WorkflowJob/Get` every few seconds until a terminal status (Completed, Failed, or Canceled)
+5. On success, call `Image/GetDetailByRow` and save the response to `detail_by_row.json`
+
+**Required API key roles:** ProcessBatch, GetDrillhole, GetImageRowData
+
+#### Required environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `FASTGEO_API_KEY` | API key with ProcessBatch, GetDrillhole, GetImageRowData roles. |
+| `PROJECT_ID` | Project ID. |
+| `PROSPECT_ID` | Prospect ID. |
+| `DRILLHOLE_ID` | Drill hole ID to process. |
+| `WORKFLOW_ID` | Workflow ID (e.g. Block OCR workflow). |
+| `IMAGE_TYPE_ID` | Image type ID to include in the batch. |
+
+#### Optional environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FASTGEO_BASE_URL` | `https://api-portal1.fastgeo.com.au` | API root URL (omit for production). |
+| `IMAGE_SUBTYPE_ID` | — | Filter batch to a specific image subtype. |
+| `IMAGE_CATEGORY` | — | Image category filter. |
+| `IS_ONLY_NEW_IMAGES` | `false` | When `true`/`1`/`yes`, process only new images. |
+| `POLL_INTERVAL_SEC` | `5` | Seconds between status polls. |
+| `OUTPUT_FILE` | `detail_by_row.json` | Path for the GetDetailByRow JSON output. |
+| `BATCH_NAME` | auto | Override batch name (skips drill hole lookup). |
+| `DRILLHOLE_NAME` | auto | Use `Process drillhole {name}` without calling DrillHole/Get. |
+
+> Note: `batch_process.py` authenticates with the `X-API-Key` header and reads `FASTGEO_API_KEY` (not the `API_KEY` used by the other scripts).
+
+#### Job status codes
+
+| Status | Value | Meaning |
+|--------|-------|---------|
+| NotStart | 1 | Batch created, not yet running. |
+| Running | 2 | Processing in progress. |
+| Completed | 3 | Success — script fetches GetDetailByRow. |
+| Failed | 4 | Batch failed — check `failedImageIds` in the job response. |
+| Canceled | 5 | Batch was canceled. |
+
 ### Getting Image Row Data
 
 To retrieve row-specific data for images:
@@ -144,7 +218,9 @@ This will:
 1. Prepare your `file_summary.csv` file with image information
 2. Create a `.env` file with your API credentials
 3. Run `upload_image.py` to upload images
-4. Run `execute_batch.py` to process the uploaded images
+4. Process the uploaded images, either:
+   - Run `execute_batch.py` for per-image processing, or
+   - Run `batch_process.py` to run a full drill hole as a single batch job
 5. Run `get_image_row.py` to retrieve OCR and core outline data
 6. Run `get_upload_list.py` to get lists of uploaded files and drill holes
 
@@ -199,3 +275,5 @@ All scripts create detailed logs in the `logs/` directory:
 - Image row data logs: `logs/get_image_row/logs/`
 
 Success and failure details are saved in corresponding subdirectories.
+
+`batch_process.py` does not write to `logs/`; it prints progress to the console and saves the final OCR / row detail to `detail_by_row.json` (or the path set in `OUTPUT_FILE`). This output may contain project / drill hole data, so keep it out of version control.
