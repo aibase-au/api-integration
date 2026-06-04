@@ -139,7 +139,7 @@ To run an entire drill hole through a workflow as a single batch job (create →
 Add `DRILLHOLE_ID` and `IMAGE_TYPE_ID` to your `.env` (in addition to `PROJECT_ID`, `PROSPECT_ID`, `WORKFLOW_ID`, and your credentials), then run:
 
 ```bash
-python batch_process.py
+python batch_process_by_drillhole.py
 ```
 
 This will:
